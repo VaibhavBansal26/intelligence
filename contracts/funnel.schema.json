@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:intelligence:contract:funnel",
+  "title": "funnel",
+  "description": "GET /funnels item (additionalProperties intentionally open: unknown fields must be ignored by consumers)",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "steps_count": {
+      "type": "integer"
+    },
+    "visits": {
+      "type": "integer"
+    },
+    "unique_visits": {
+      "type": "integer"
+    },
+    "optins": {
+      "type": "integer"
+    },
+    "optin_rate": {
+      "type": "number"
+    },
+    "orders": {
+      "type": "integer"
+    },
+    "gross": {
+      "type": "number"
+    },
+    "currency": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "earnings_per_view": {
+      "type": "number"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "visits",
+    "unique_visits",
+    "optins",
+    "orders",
+    "gross"
+  ]
+}

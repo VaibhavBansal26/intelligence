@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:intelligence:contract:event",
+  "title": "event",
+  "description": "GET /export/events NDJSON line (additionalProperties intentionally open: unknown fields must be ignored by consumers)",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "type": {
+      "enum": [
+        "page_view",
+        "optin",
+        "order"
+      ]
+    },
+    "funnel_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "step_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "visitor_key": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "contact_key": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "utm_source": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "utm_medium": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "utm_campaign": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "device": {
+      "enum": [
+        "desktop",
+        "mobile",
+        "tablet",
+        "unknown",
+        null
+      ]
+    },
+    "country": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "referrer_host": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "amount": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "currency": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "unique_visit": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id",
+    "ts",
+    "type",
+    "funnel_id",
+    "step_id",
+    "visitor_key",
+    "contact_key",
+    "unique_visit"
+  ]
+}

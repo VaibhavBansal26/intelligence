@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:intelligence:contract:message_meta",
+  "title": "message_meta",
+  "description": "GET /export/messages-meta NDJSON line (no content) (additionalProperties intentionally open: unknown fields must be ignored by consumers)",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "room_id": {
+      "type": "string"
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "direction": {
+      "enum": [
+        "in",
+        "out"
+      ]
+    },
+    "channel": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "kind": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "length_chars": {
+      "type": "integer"
+    },
+    "delivery_status": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "sender_type": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "room_id",
+    "ts",
+    "direction"
+  ]
+}

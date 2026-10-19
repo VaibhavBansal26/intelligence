@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:intelligence:contract:room",
+  "title": "room",
+  "description": "GET /export/rooms NDJSON line (additionalProperties intentionally open: unknown fields must be ignored by consumers)",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "closed_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "contact_key": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "channel_mix": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer"
+      }
+    },
+    "inbox_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "assignee_key": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "priority": {
+      "enum": [
+        0,
+        1
+      ]
+    },
+    "status": {
+      "type": "string"
+    },
+    "messages_in": {
+      "type": "integer"
+    },
+    "messages_out": {
+      "type": "integer"
+    },
+    "first_response_s": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "resolution_s": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "reopen_count": {
+      "type": "integer"
+    },
+    "snoozed_count": {
+      "type": "integer"
+    },
+    "ai_intent": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "ai_sentiment": {
+      "type": [
+        "string",
+        "number",
+        "null"
+      ]
+    },
+    "ai_urgency": {
+      "type": [
+        "string",
+        "number",
+        "null"
+      ]
+    },
+    "csat": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "hour_of_day_created": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 23
+    },
+    "dow_created": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 6
+    }
+  },
+  "required": [
+    "id",
+    "created_at",
+    "contact_key",
+    "channel_mix",
+    "status",
+    "hour_of_day_created",
+    "dow_created"
+  ]
+}

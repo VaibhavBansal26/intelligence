@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:intelligence:contract:funnel_structure",
+  "title": "funnel_structure",
+  "description": "GET /export/funnel-structure record. NOTE: the contract leaves the exact shape open; this is the shape the consumer assumes (step_id may also arrive as id) (additionalProperties intentionally open: unknown fields must be ignored by consumers)",
+  "type": "object",
+  "properties": {
+    "funnel_id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "step_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "order": {
+            "type": "integer"
+          },
+          "type": {
+            "type": "string"
+          },
+          "blocks": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "word_count": {
+            "type": "integer"
+          },
+          "has_order_bump": {
+            "type": "boolean"
+          },
+          "has_upsell": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "step_id",
+          "order",
+          "word_count"
+        ]
+      }
+    }
+  },
+  "required": [
+    "funnel_id",
+    "steps"
+  ]
+}

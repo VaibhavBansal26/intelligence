@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:intelligence:contract:timeseries",
+  "title": "timeseries",
+  "description": "GET /timeseries response (additionalProperties intentionally open: unknown fields must be ignored by consumers)",
+  "type": "object",
+  "properties": {
+    "interval": {
+      "enum": [
+        "hour",
+        "day",
+        "week",
+        "month"
+      ]
+    },
+    "points": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "t": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "t",
+          "value"
+        ]
+      }
+    }
+  },
+  "required": [
+    "interval",
+    "points"
+  ]
+}
