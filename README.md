@@ -38,6 +38,9 @@ Everything is an environment variable ([docs/CONFIGURATION.md](docs/CONFIGURATIO
 requires `KEK` (Fernet key for secrets at rest) and `ADMIN_API_KEY`. `DATABASE_URL` defaults to SQLite; PostgreSQL via the
 `postgres` extra. `ANTHROPIC_API_KEY` enables the LLM layer; `ALLOW_PRIVATE_SOURCES` (dev only) disables the SSRF guard.
 
+## Scale
+Accounts with very large event histories use an optional Parquet-bucketed out-of-core path (`COLUMNAR_DIR`): 100M events aggregated into contact profiles in about 11 s with a peak RSS of 638 MB on an 8 GB laptop (measured, synthetic; 300M also measured). Batch scoring, model hot swap, per-account budgets and a standalone worker (`python -m app.worker`) are included. Details, capacity model and what was *not* measured: [docs/SCALING.md](docs/SCALING.md).
+
 ## Documentation
 Start at [docs/README.md](docs/README.md): architecture, approach, models, AI layer, API, testing, runbook, security, ADRs.
 

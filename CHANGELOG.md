@@ -3,6 +3,11 @@
 All notable changes are recorded here ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/), semantic versioning).
 
 ## [Unreleased]
+### Added
+- Out-of-core path: hash-bucketed Parquet event store, incremental per-bucket contact-profile refresh, `profiles` fan-out jobs, standalone worker (`python -m app.worker`).
+- `POST /v1/leads/score/batch`, model LRU cache with live hot swap on promote/rollback, per-data-version feature-frame cache.
+- Per-account budgets: concurrent jobs with fair scheduling, `ACCOUNT_MAX_EVENT_ROWS`, `ML_MAX_TRAINING_ROWS`.
+- `docs/SCALING.md`, `docs/PERFORMANCE.md`, ADR 0009; benchmarks for 100M/300M events, scoring and training.
 
 ## [0.1.0] - 2026-10-19
 ### Added
