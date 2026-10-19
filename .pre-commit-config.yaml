@@ -1,0 +1,19 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: uv run mypy app
+        language: system
+        pass_filenames: false
+      - id: docs-drift
+        name: docs drift (config + openapi)
+        entry: bash -c 'uv run python -m app.tools.docs_config --check && uv run python -m app.tools.export_openapi --check'
+        language: system
+        pass_filenames: false

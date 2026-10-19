@@ -1,0 +1,30 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --prefix tools/mermaid_check
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy app
+      - name: Docs drift (config + OpenAPI + links + Mermaid)
+        run: |
+          uv run python -m app.tools.docs_config --check
+          uv run python -m app.tools.export_openapi --check
+      - run: uv run pytest --cov=app --cov-report=term-missing --cov-report=xml
+      - name: Bounded-memory ingest benchmark (2M rows)
+        run: uv run pytest -m slow -s tests/perf
+      - run: docker build -t intelligence:ci .
