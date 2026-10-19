@@ -20,6 +20,8 @@ dependencies = [
   "pyjwt>=2.9",
   "prometheus-client>=0.20",
   "anthropic>=0.40",
+  "polars>=2.0.0",
+  "pyarrow>=26.0.0",
 ]
 
 [project.optional-dependencies]

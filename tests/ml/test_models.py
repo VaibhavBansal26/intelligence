@@ -208,3 +208,11 @@ def test_auto_promotion_policy_keeps_better_model(fresh_env: Env) -> None:
     ] == "heuristic"
     s = Settings(env="test")
     assert lead_spec(s, 14).embargo_s == 14 * 86400
+
+
+def test_heuristics_are_finite_with_missing_inputs() -> None:
+    from app.models.scorers import sla_heuristic
+
+    df = pd.DataFrame([{"utm_source": None, "device": None}, {"utm_source": "email", "n_page_views_pre": np.nan}])
+    assert np.isfinite(lead_heuristic(df, 0.2)).all()
+    assert np.isfinite(sla_heuristic(pd.DataFrame([{"channel": None, "hour": np.nan}, {}]), 0.3)).all()

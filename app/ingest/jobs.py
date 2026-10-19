@@ -7,7 +7,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
 from app.clock import Clock
 from app.connectors.client import ConnectorError
@@ -29,9 +29,10 @@ class JobQueue(Protocol):
 
 
 class DbJobQueue:
-    def __init__(self, sessions: SessionFactory, clock: Clock) -> None:
+    def __init__(self, sessions: SessionFactory, clock: Clock, max_running_per_account: int = 0) -> None:
         self._sessions = sessions
         self._clock = clock
+        self._max_running = max_running_per_account  # 0 = unlimited
 
     def enqueue(self, account_id: str, job_type: str, payload: dict[str, Any]) -> str:
         jid = new_id()
@@ -55,9 +56,17 @@ class DbJobQueue:
             q = select(m.Job).where(m.Job.status == "queued").order_by(m.Job.created_at, m.Job.id)
             if job_id:
                 q = q.where(m.Job.id == job_id)
-            for job in s.execute(q.limit(50)).scalars():
-                if (job.payload or {}).get("not_before", 0) > now:
-                    continue
+            running: dict[str, int] = dict(
+                s.execute(
+                    select(m.Job.account_id, func.count()).where(m.Job.status == "running").group_by(m.Job.account_id)
+                ).all()
+            )
+            candidates = [j for j in s.execute(q.limit(200)).scalars() if (j.payload or {}).get("not_before", 0) <= now]
+            if self._max_running:
+                candidates = [j for j in candidates if running.get(j.account_id, 0) < self._max_running]
+            # fair scheduling: the account with the fewest running jobs goes first, then oldest job
+            candidates.sort(key=lambda j: (running.get(j.account_id, 0), j.created_at, j.id))
+            for job in candidates:
                 res = s.execute(
                     update(m.Job)
                     .where(m.Job.id == job.id, m.Job.status == "queued")

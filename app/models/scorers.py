@@ -43,7 +43,9 @@ class FeatureEncoder:
             other = len(self.maps[c])
             raw = df[c] if c in df else pd.Series([None] * len(df), index=df.index)
             mapping = self.maps[c]
-            codes = raw.astype("string").map(lambda v, mp=mapping, oth=other: np.nan if v is pd.NA or v is None else float(mp[str(v)] if str(v) in mp else oth))
+            codes = raw.astype("string").map(
+                lambda v, mp=mapping, oth=other: np.nan if v is pd.NA or v is None else float(mp.get(str(v), oth))
+            )
             cols.append(codes.to_numpy(dtype=float))
         return np.column_stack(cols) if cols else np.empty((len(df), 0))
 
@@ -75,12 +77,14 @@ def explain_by_occlusion(scorer: Scorer, df: pd.DataFrame, top_k: int = 3, min_a
                 continue
             f = scorer.features[j]
             v = df.iloc[i][f]
-            row.append({
-                "feature": f,
-                "value": None if pd.isna(v) else (v if isinstance(v, str) else float(v)),
-                "effect": round(float(deltas[i, j]), 4),
-                "direction": "increases" if deltas[i, j] > 0 else "decreases",
-            })
+            row.append(
+                {
+                    "feature": f,
+                    "value": None if pd.isna(v) else (v if isinstance(v, str) else float(v)),
+                    "effect": round(float(deltas[i, j]), 4),
+                    "direction": "increases" if deltas[i, j] > 0 else "decreases",
+                }
+            )
         out.append(row)
     return out
 
@@ -138,7 +142,14 @@ class FunctionScorer:
 
     method = "heuristic"
 
-    def __init__(self, fn: Callable[[pd.DataFrame, float], NDArray[np.float64]], base_rate: float, features: list[str], baseline: dict[str, Any], name: str) -> None:
+    def __init__(
+        self,
+        fn: Callable[[pd.DataFrame, float], NDArray[np.float64]],
+        base_rate: float,
+        features: list[str],
+        baseline: dict[str, Any],
+        name: str,
+    ) -> None:
         self._fn = fn
         self.base_rate = base_rate
         self.features = features
@@ -167,9 +178,13 @@ def lead_heuristic(df: pd.DataFrame, base_rate: float) -> NDArray[np.float64]:
     z = z + 0.25 * np.clip(_num(df, "n_page_views_pre", 1) - 1, 0, 4)
     z = z + 0.9 * (_num(df, "prior_intent_purchase") > 0)
     z = z + 0.3 * _num(df, "prior_sentiment_mean")
-    src = df["utm_source"].astype("string").str.lower() if "utm_source" in df else pd.Series([""] * len(df))
+    src = (
+        df["utm_source"].astype("string").str.lower().fillna("")
+        if "utm_source" in df
+        else pd.Series([""] * len(df), dtype="string")
+    )
     z = z + 0.3 * src.isin(["email", "webinar"]).to_numpy(dtype=float)
-    dev = df["device"].astype("string").str.lower() if "device" in df else pd.Series([""] * len(df))
+    dev = df["device"].astype("string").str.lower().fillna("") if "device" in df else pd.Series([""] * len(df), dtype="string")
     z = z - 0.2 * (dev == "mobile").to_numpy(dtype=float)
     z = z + 0.15 * np.clip(_num(df, "prior_orders"), 0, 3)
     return sigmoid(np.asarray(z, dtype=float))
@@ -183,6 +198,6 @@ def sla_heuristic(df: pd.DataFrame, base_rate: float) -> NDArray[np.float64]:
     z = z + 0.8 * ((hour >= 22) | (hour < 6))
     z = z + 0.5 * np.isin(_num(df, "dow", 0), [5, 6])
     z = z + 0.5 * (_num(df, "prior_avg_first_response_s", 0) > 3600)
-    ch = df["channel"].astype("string") if "channel" in df else pd.Series([""] * len(df))
+    ch = df["channel"].astype("string").fillna("") if "channel" in df else pd.Series([""] * len(df), dtype="string")
     z = z + 0.3 * (ch == "email").to_numpy(dtype=float)
     return sigmoid(np.asarray(z, dtype=float))

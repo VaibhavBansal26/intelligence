@@ -29,13 +29,24 @@ def drift_report(scorer: Any, reference: dict[str, Any], recent: pd.DataFrame, *
             continue
         cur = recent[c].astype("string").fillna("__missing__").value_counts(normalize=True)
         cats = sorted(set(ref_p) | set(map(str, cur.index)))
-        feats.append({"feature": c, "psi": round(psi_from_proportions([ref_p.get(k, 0.0) for k in cats], [float(cur.get(k, 0.0)) for k in cats]), 4)})
+        feats.append(
+            {
+                "feature": c,
+                "psi": round(psi_from_proportions([ref_p.get(k, 0.0) for k in cats], [float(cur.get(k, 0.0)) for k in cats]), 4),
+            }
+        )
     worst = max((f["psi"] for f in feats), default=0.0)
     for f in feats:
         f["level"] = "alert" if f["psi"] >= alert else "warn" if f["psi"] >= warn else "ok"
     status = "alert" if worst >= alert else "warn" if worst >= warn else "ok"
     feats.sort(key=lambda f: -f["psi"])
-    return {"status": status, "max_psi": round(float(worst), 4), "rows": int(len(recent)), "features": feats, "thresholds": {"warn": warn, "alert": alert}}
+    return {
+        "status": status,
+        "max_psi": round(float(worst), 4),
+        "rows": len(recent),
+        "features": feats,
+        "thresholds": {"warn": warn, "alert": alert},
+    }
 
 
 __all__ = ["drift_report", "np"]

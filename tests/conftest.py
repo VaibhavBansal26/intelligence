@@ -63,7 +63,9 @@ class Env:
         return {"Authorization": f"Bearer {self.key}"}
 
 
-def build_env(tmp: Path, world: World, *, train: bool = True, llm: Any = None, **settings_over: Any) -> Iterator[Env]:
+def build_env(
+    tmp: Path, world: World, *, train: bool = True, llm: Any = None, check_sync: bool = True, **settings_over: Any
+) -> Iterator[Env]:
     settings = make_settings(tmp, **settings_over)
     f_app = create_fake_funnels_app(world)
     c_app = create_fake_conversations_app(world)
@@ -88,7 +90,9 @@ def build_env(tmp: Path, world: World, *, train: bool = True, llm: Any = None, *
             )
             assert r.status_code == 201, r.text
         r = client.post("/v1/sync?wait=true", json={}, headers=h)
-        assert r.status_code == 202 and r.json()["status"] == "succeeded", r.text
+        assert r.status_code == 202, r.text
+        if check_sync:
+            assert r.json()["status"] == "succeeded" and not r.json()["result"]["errors"], r.text
         if train:
             r = client.post("/v1/models/train?wait=true", json={}, headers=h)
             assert r.json()["status"] == "succeeded", r.text

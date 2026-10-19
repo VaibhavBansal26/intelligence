@@ -164,6 +164,58 @@ def build_contact_profiles(session: Session, account_id: str) -> pd.DataFrame:
     return df[PROFILE_COLUMNS].reset_index(drop=True)
 
 
+def columnar_funnel_profile(lf: Any, cap: int) -> pd.DataFrame:
+    """Funnel profile from the Parquet store, deterministically down-sampled (by contact hash) to at most `cap` rows
+    so memory stays bounded however many contacts exist. Columns match `funnel_profile` (plus `contact_h`)."""
+    import polars as pl
+
+    n = int(lf.select(pl.len()).collect().item())
+    if n == 0:
+        return pd.DataFrame(columns=["contact_key", "contact_h"])
+    if cap and n > cap:
+        lf = lf.filter(pl.col("contact_h") % ((n + cap - 1) // cap) == 0)
+    df = lf.collect().to_pandas()
+    df["contact_key"] = df["contact_h"].map(lambda h: f"{int(h):016x}")
+    df = df.rename(columns={})
+    df["n_leads"] = 0
+    df["utm_source"] = None
+    return df
+
+
+def build_contact_profiles_columnar(session: Session, account_id: str, lf: Any, cap: int) -> pd.DataFrame:
+    """Same output as `build_contact_profiles`, with the funnel side read out-of-core from Parquet."""
+    f = columnar_funnel_profile(lf, cap)
+    c = conversation_profile(session.connection(), account_id)
+    f["in_funnels"] = True
+    c["in_conversations"] = True
+    if not c.empty:
+        c["contact_key"] = c["contact_key"].map(lambda k: f"{int(str(k)[:16], 16):016x}")
+    if f.empty and c.empty:
+        return pd.DataFrame(columns=PROFILE_COLUMNS)
+    df = c if f.empty else (f if c.empty else f.merge(c, on="contact_key", how="outer"))
+    for col in PROFILE_COLUMNS:
+        if col not in df.columns:
+            df[col] = np.nan if col != "utm_source" else None
+    for flag in ("in_funnels", "in_conversations"):
+        df[flag] = df[flag].fillna(False).astype(bool)
+    for col in (
+        "f_events",
+        "f_page_views",
+        "f_steps_reached",
+        "f_funnels",
+        "f_optins",
+        "f_orders",
+        "f_revenue",
+        "n_leads",
+        "c_rooms",
+        "c_open_rooms",
+        "c_purchase_intent_rooms",
+        "c_reopens",
+    ):
+        df[col] = df[col].fillna(0)
+    return df[PROFILE_COLUMNS].reset_index(drop=True)
+
+
 def join_report(session: Session, account_id: str) -> dict[str, Any]:
     """Coverage of the cross-app identity join, with explicit pepper-mismatch diagnostics."""
     conn = session.connection()

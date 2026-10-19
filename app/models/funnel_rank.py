@@ -51,10 +51,20 @@ def step_frame(steps: pd.DataFrame, funnels: pd.DataFrame) -> pd.DataFrame:
             downstream = float(g.loc[i + 1 :, "gross"].sum()) if i < last else float(r["gross"])
             if downstream <= 0:
                 downstream = fgross.get((src, fid), 0.0)
-            rows.append({
-                "source_id": src, "funnel_id": fid, "step_id": r["step_id"], "step_name": r["name"], "ord": int(r["ord"]), "role": _role(i, last),
-                "n": trials, "passers": passers, "downstream_gross": downstream, "step_gross": float(r["gross"]),
-            })
+            rows.append(
+                {
+                    "source_id": src,
+                    "funnel_id": fid,
+                    "step_id": r["step_id"],
+                    "step_name": r["name"],
+                    "ord": int(r["ord"]),
+                    "role": _role(i, last),
+                    "n": trials,
+                    "passers": passers,
+                    "downstream_gross": downstream,
+                    "step_gross": float(r["gross"]),
+                }
+            )
     return pd.DataFrame(rows)
 
 
@@ -62,12 +72,19 @@ def _content_matrix(df: pd.DataFrame, structure: pd.DataFrame) -> pd.DataFrame |
     if structure.empty:
         return None
     st = structure.copy()
-    feats = pd.DataFrame({
-        "source_id": st["source_id"], "funnel_id": st["funnel_id"], "step_id": st["step_id"],
-        "log_words": np.log1p(st["word_count"].astype(float)), "has_form": (st["n_form"] > 0).astype(float),
-        "has_video": (st["n_video"] > 0).astype(float), "has_countdown": (st["n_countdown"] > 0).astype(float),
-        "has_bump": st["has_order_bump"].astype(float), "has_upsell": st["has_upsell"].astype(float),
-    })
+    feats = pd.DataFrame(
+        {
+            "source_id": st["source_id"],
+            "funnel_id": st["funnel_id"],
+            "step_id": st["step_id"],
+            "log_words": np.log1p(st["word_count"].astype(float)),
+            "has_form": (st["n_form"] > 0).astype(float),
+            "has_video": (st["n_video"] > 0).astype(float),
+            "has_countdown": (st["n_countdown"] > 0).astype(float),
+            "has_bump": st["has_order_bump"].astype(float),
+            "has_upsell": st["has_upsell"].astype(float),
+        }
+    )
     return df.merge(feats, on=["source_id", "funnel_id", "step_id"], how="left")
 
 
@@ -115,7 +132,11 @@ def rank_steps(
         prior = fit_beta_prior(g["passers"], g["n"])
         centre = np.full(len(g), prior.mean)
         used_content = False
-        if has_content and len(g) >= MIN_GROUP_FOR_CONTENT_PRIOR and g[CONTENT_FEATURES].notna().all(axis=1).sum() >= MIN_GROUP_FOR_CONTENT_PRIOR:
+        if (
+            has_content
+            and len(g) >= MIN_GROUP_FOR_CONTENT_PRIOR
+            and g[CONTENT_FEATURES].notna().all(axis=1).sum() >= MIN_GROUP_FOR_CONTENT_PRIOR
+        ):
             ok = g[CONTENT_FEATURES].notna().all(axis=1)
             x = g.loc[ok, CONTENT_FEATURES].to_numpy(dtype=float)
             r = np.clip(g.loc[ok, "rate"].to_numpy(), 0.01, 0.99)
@@ -129,7 +150,12 @@ def rank_steps(
         strength = prior.strength
         sf.loc[g.index, "prior_alpha"] = centre * strength
         sf.loc[g.index, "prior_beta"] = (1 - centre) * strength
-        priors[str(role)] = {"mean": round(prior.mean, 4), "strength": round(strength, 2), "content_aware": used_content, "steps": int(len(g))}
+        priors[str(role)] = {
+            "mean": round(prior.mean, 4),
+            "strength": round(strength, 2),
+            "content_aware": used_content,
+            "steps": len(g),
+        }
     sf["shrunk_rate"] = (sf["prior_alpha"] + sf["passers"]) / (sf["prior_alpha"] + sf["prior_beta"] + sf["n"])
     # benchmark = median of shrunk rates among peers with the same role (or an explicit override)
     bench: dict[str, float | None] = {}
@@ -154,28 +180,72 @@ def rank_steps(
             rng = _rng_for(seed, r.source_id, r.funnel_id, r.step_id)
             draws = rng.beta(r.prior_alpha + r.passers, r.prior_beta + r.n - r.passers, size=n_boot)
             vals = r.n * np.clip(b - draws, 0, None) * rpp
-            uplift = {"mean": float(vals.mean()), "p10": float(np.percentile(vals, 10)), "p50": float(np.percentile(vals, 50)), "p90": float(np.percentile(vals, 90))}
+            uplift = {
+                "mean": float(vals.mean()),
+                "p10": float(np.percentile(vals, 10)),
+                "p50": float(np.percentile(vals, 50)),
+                "p90": float(np.percentile(vals, 90)),
+            }
             extra = float(r.n * max(0.0, b - r.shrunk_rate))
         row: dict[str, Any] = {
-            "source_id": r.source_id, "funnel_id": r.funnel_id, "step_id": r.step_id, "step_name": r.step_name, "order": int(r.ord), "role": r.role,
-            "visitors": int(r.n), "passed": int(r.passers), "raw_rate": round(float(r.rate), 4), "shrunk_rate": round(float(r.shrunk_rate), 4),
-            "rate_ci95": [round(lo, 4), round(hi, 4)], "benchmark_rate": None if b is None else round(b, 4),
-            "extra_passers": round(extra, 1), "revenue_per_passer": round(float(rpp), 2),
-            "expected_uplift": round(uplift["mean"], 2), "uplift_p10": round(uplift["p10"], 2), "uplift_p50": round(uplift["p50"], 2), "uplift_p90": round(uplift["p90"], 2),
+            "source_id": r.source_id,
+            "funnel_id": r.funnel_id,
+            "step_id": r.step_id,
+            "step_name": r.step_name,
+            "order": int(r.ord),
+            "role": r.role,
+            "visitors": int(r.n),
+            "passed": int(r.passers),
+            "raw_rate": round(float(r.rate), 4),
+            "shrunk_rate": round(float(r.shrunk_rate), 4),
+            "rate_ci95": [round(lo, 4), round(hi, 4)],
+            "benchmark_rate": None if b is None else round(b, 4),
+            "extra_passers": round(extra, 1),
+            "revenue_per_passer": round(float(rpp), 2),
+            "expected_uplift": round(uplift["mean"], 2),
+            "uplift_p10": round(uplift["p10"], 2),
+            "uplift_p50": round(uplift["p50"], 2),
+            "uplift_p90": round(uplift["p90"], 2),
             "confidence": "high" if r.n >= 500 else "medium" if r.n >= 100 else "low",
         }
         if structure_idx is not None and (r.source_id, r.funnel_id, r.step_id) in structure_idx.index:
             srow = structure_idx.loc[(r.source_id, r.funnel_id, r.step_id)]
             if isinstance(srow, pd.DataFrame):
                 srow = srow.iloc[0]
-            row["content"] = {"type": srow["step_type"], "word_count": int(srow["word_count"]), "forms": int(srow["n_form"]), "videos": int(srow["n_video"]), "countdowns": int(srow["n_countdown"]), "order_bump": bool(srow["has_order_bump"]), "upsell": bool(srow["has_upsell"])}
-            row["content_hints"] = content_hints(pd.Series({"word_count": srow["word_count"], "n_video": srow["n_video"], "step_type": srow["step_type"], "has_order_bump": srow["has_order_bump"], "n_countdown": srow["n_countdown"], "n_form": srow["n_form"]}))
+            row["content"] = {
+                "type": srow["step_type"],
+                "word_count": int(srow["word_count"]),
+                "forms": int(srow["n_form"]),
+                "videos": int(srow["n_video"]),
+                "countdowns": int(srow["n_countdown"]),
+                "order_bump": bool(srow["has_order_bump"]),
+                "upsell": bool(srow["has_upsell"]),
+            }
+            row["content_hints"] = content_hints(
+                pd.Series(
+                    {
+                        "word_count": srow["word_count"],
+                        "n_video": srow["n_video"],
+                        "step_type": srow["step_type"],
+                        "has_order_bump": srow["has_order_bump"],
+                        "n_countdown": srow["n_countdown"],
+                        "n_form": srow["n_form"],
+                    }
+                )
+            )
         out_rows.append(row)
     ranked = sorted(out_rows, key=lambda x: (-x["expected_uplift"], -x["visitors"], x["step_id"]))
     for i, row in enumerate(ranked, 1):
         row["rank"] = i
     funnels_out = _rank_funnels(ranked, funnels)
-    return {"steps": ranked, "funnels": funnels_out, "method": "empirical_bayes_beta_bootstrap", "notes": notes, "priors": priors, "benchmarks": {k: v for k, v in bench.items()}}
+    return {
+        "steps": ranked,
+        "funnels": funnels_out,
+        "method": "empirical_bayes_beta_bootstrap",
+        "notes": notes,
+        "priors": priors,
+        "benchmarks": dict(bench.items()),
+    }
 
 
 def _rank_funnels(ranked_steps: list[dict[str, Any]], funnels: pd.DataFrame) -> list[dict[str, Any]]:
@@ -187,17 +257,27 @@ def _rank_funnels(ranked_steps: list[dict[str, Any]], funnels: pd.DataFrame) -> 
     for key, steps in by_funnel.items():
         weakest = max(steps, key=lambda s: s["expected_uplift"])  # steps are already sorted by uplift globally
         f = meta.get(key)
-        rows.append({
-            "source_id": key[0], "funnel_id": key[1], "funnel_name": getattr(f, "name", key[1]), "gross": round(float(getattr(f, "gross", 0.0)), 2),
-            "visits": int(getattr(f, "unique_visits", 0) or 0), "orders": int(getattr(f, "orders", 0) or 0),
-            "weakest_step_id": weakest["step_id"], "weakest_step_name": weakest["step_name"], "weakest_step_rank": weakest["rank"],
-            "expected_uplift": weakest["expected_uplift"], "uplift_p10": weakest["uplift_p10"], "uplift_p90": weakest["uplift_p90"],
-            "confidence": weakest["confidence"],
-        })
+        rows.append(
+            {
+                "source_id": key[0],
+                "funnel_id": key[1],
+                "funnel_name": getattr(f, "name", key[1]),
+                "gross": round(float(getattr(f, "gross", 0.0)), 2),
+                "visits": int(getattr(f, "unique_visits", 0) or 0),
+                "orders": int(getattr(f, "orders", 0) or 0),
+                "weakest_step_id": weakest["step_id"],
+                "weakest_step_name": weakest["step_name"],
+                "weakest_step_rank": weakest["rank"],
+                "expected_uplift": weakest["expected_uplift"],
+                "uplift_p10": weakest["uplift_p10"],
+                "uplift_p90": weakest["uplift_p90"],
+                "confidence": weakest["confidence"],
+            }
+        )
     rows.sort(key=lambda r: (-r["expected_uplift"], -r["gross"], r["funnel_id"]))
     for i, r in enumerate(rows, 1):
         r["rank"] = i
     return rows
 
 
-__all__ = ["rank_steps", "step_frame", "BetaPrior"]
+__all__ = ["BetaPrior", "rank_steps", "step_frame"]

@@ -1,0 +1,8 @@
+{
+  "name": "mermaid-check",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Parses the Mermaid blocks in the docs with the real Mermaid parser (used by tests/test_docs.py and CI)",
+  "type": "module",
+  "dependencies": { "jsdom": "^26.0.0", "mermaid": "^11.4.0" }
+}

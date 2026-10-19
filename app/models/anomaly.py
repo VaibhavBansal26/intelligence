@@ -142,7 +142,11 @@ def detect(values: NDArray[np.float64], cfg: DetectorConfig | None = None) -> De
     base = seasonal_baseline(x, cfg.period, cfg.n_periods)
     resid = x - base
     scale = _mad_scale(resid)
-    floor = 0.5 * np.sqrt(np.maximum(np.nan_to_num(base, nan=1.0), 1.0)) if cfg.count_like else 0.03 * np.abs(np.nan_to_num(base, nan=0.0))
+    floor = (
+        0.5 * np.sqrt(np.maximum(np.nan_to_num(base, nan=1.0), 1.0))
+        if cfg.count_like
+        else 0.03 * np.abs(np.nan_to_num(base, nan=0.0))
+    )
     s_t = np.maximum(scale, np.maximum(floor, 1e-9))
     z = resid / s_t
     rel_ok = np.abs(resid) >= cfg.min_rel_dev * np.maximum(np.abs(np.nan_to_num(base, nan=0.0)), 1e-9)
@@ -162,7 +166,18 @@ def detect(values: NDArray[np.float64], cfg: DetectorConfig | None = None) -> De
         rel = np.nanmean(resid[seg]) / max(abs(float(np.nanmean(base[seg]))), 1e-9)
         if abs(rel) < cfg.min_rel_dev or (cfg.count_like and abs(float(np.nanmean(resid[seg]))) < cfg.min_abs_dev):
             continue
-        episodes.append(Episode(s, e, "shift", direction, float(np.nanmax(np.abs(z[seg]))), float(np.nanmean(x[seg])), float(np.nanmean(base[seg])), ["cusum"]))
+        episodes.append(
+            Episode(
+                s,
+                e,
+                "shift",
+                direction,
+                float(np.nanmax(np.abs(z[seg]))),
+                float(np.nanmean(x[seg])),
+                float(np.nanmean(base[seg])),
+                ["cusum"],
+            )
+        )
     for i in sorted(flagged):
         direction = "spike" if resid[i] > 0 else "drop"
         episodes.append(Episode(i, i, "point", direction, float(abs(z[i])), float(x[i]), float(base[i]), ["esd"]))

@@ -31,6 +31,7 @@ class TrainSpec:
     min_rows: int
     min_class: int
     seed: int
+    max_rows: int = 0
     backend: str = "hgb"
     time_budget_s: float = 120.0
     target_description: str = ""
@@ -53,12 +54,28 @@ def _estimator(backend: str, seed: int, categorical_mask: list[bool]) -> Any:
         try:
             import lightgbm as lgb
 
-            return lgb.LGBMClassifier(n_estimators=200, learning_rate=0.05, num_leaves=15, min_child_samples=20, subsample=0.8, random_state=seed, verbose=-1, deterministic=True, force_row_wise=True)
+            return lgb.LGBMClassifier(
+                n_estimators=200,
+                learning_rate=0.05,
+                num_leaves=15,
+                min_child_samples=20,
+                subsample=0.8,
+                random_state=seed,
+                verbose=-1,
+                deterministic=True,
+                force_row_wise=True,
+            )
         except ImportError:
             pass
     return HistGradientBoostingClassifier(
-        max_iter=140, learning_rate=0.06, max_leaf_nodes=15, min_samples_leaf=20, l2_regularization=1.0,
-        early_stopping=False, categorical_features=categorical_mask, random_state=seed,
+        max_iter=140,
+        learning_rate=0.06,
+        max_leaf_nodes=15,
+        min_samples_leaf=20,
+        l2_regularization=1.0,
+        early_stopping=False,
+        categorical_features=categorical_mask,
+        random_state=seed,
     )
 
 
@@ -77,15 +94,22 @@ def heuristic_outcome(df: pd.DataFrame, spec: TrainSpec, reason: str) -> TrainOu
     labelled = df[df["_trainable"]] if "_trainable" in df else df
     base = float(labelled[spec.label_col].mean()) if len(labelled) >= 20 else 0.1
     scorer = FunctionScorer(spec.heuristic, base, spec.numeric + spec.categorical, spec.heuristic_baseline, spec.name)
-    metrics = {"method": "heuristic", "base_rate": round(base, 4), "labelled_rows": int(len(labelled)), "cold_start_reason": reason}
+    metrics = {
+        "method": "heuristic",
+        "base_rate": round(base, 4),
+        "labelled_rows": len(labelled),
+        "cold_start_reason": reason,
+    }
     card = _card(spec, "heuristic", metrics, df, [], reason)
-    return TrainOutcome(scorer, "heuristic", metrics, card, {}, int(len(labelled)), reason)
+    return TrainOutcome(scorer, "heuristic", metrics, card, {}, len(labelled), reason)
 
 
 def train_binary(df: pd.DataFrame, spec: TrainSpec) -> TrainOutcome:
     """`df` must contain only rows whose label is final (mature); see the feature builders for leakage guards."""
     t0 = time.monotonic()
     data = df.sort_values(spec.time_col, kind="stable").reset_index(drop=True)
+    if spec.max_rows and len(data) > spec.max_rows:
+        data = data.tail(spec.max_rows).reset_index(drop=True)  # per-account budget: most recent rows only
     n = len(data)
     if n < spec.min_rows:
         return heuristic_outcome(data, spec, f"only {n} labelled rows (< {spec.min_rows}); using documented heuristic")
@@ -95,7 +119,9 @@ def train_binary(df: pd.DataFrame, spec: TrainSpec) -> TrainOutcome:
     y_tr_all = train_all[spec.label_col].to_numpy(dtype=int)
     y_val = val[spec.label_col].to_numpy(dtype=int)
     if min(y_tr_all.sum(), len(y_tr_all) - y_tr_all.sum(), y_val.sum(), len(y_val) - y_val.sum()) < spec.min_class:
-        return heuristic_outcome(data, spec, f"fewer than {spec.min_class} examples of a class in train/validation; using documented heuristic")
+        return heuristic_outcome(
+            data, spec, f"fewer than {spec.min_class} examples of a class in train/validation; using documented heuristic"
+        )
     cal_cut = float(train_all[spec.time_col].quantile(0.8))
     fit_df = train_all[train_all[spec.time_col] < cal_cut]
     cal_df = train_all[train_all[spec.time_col] >= cal_cut]
@@ -117,14 +143,26 @@ def train_binary(df: pd.DataFrame, spec: TrainSpec) -> TrainOutcome:
     x_val = enc.transform(val)
     p_val = scorer.predict(val)
     metrics = _metrics(y_val, p_val)
-    metrics.update({
-        "method": "gbm", "dropped_all_missing_features": dropped, "backend": type(est).__name__, "calibration": cal.kind, "train_rows": int(len(fit_df)), "calibration_rows": int(len(cal_df)),
-        "validation_rows": int(len(val)), "embargo_dropped_rows": int(len(data[(data[spec.time_col] >= cut - spec.embargo_s) & (data[spec.time_col] < cut)])),
-        "train_positive_rate": round(float(y_fit.mean()), 4), "validation_positive_rate": round(float(y_val.mean()), 4),
-    })
+    metrics.update(
+        {
+            "method": "gbm",
+            "dropped_all_missing_features": dropped,
+            "backend": type(est).__name__,
+            "calibration": cal.kind,
+            "train_rows": len(fit_df),
+            "calibration_rows": len(cal_df),
+            "validation_rows": len(val),
+            "embargo_dropped_rows": len(data[(data[spec.time_col] >= cut - spec.embargo_s) & (data[spec.time_col] < cut)]),
+            "train_positive_rate": round(float(y_fit.mean()), 4),
+            "validation_positive_rate": round(float(y_val.mean()), 4),
+        }
+    )
     imp = permutation_importance(est, x_val, y_val, scoring="roc_auc", n_repeats=5, random_state=spec.seed, n_jobs=1)
     importances: list[dict[str, Any]] = sorted(
-        ({"feature": f, "importance": round(float(m), 5), "std": round(float(s), 5)} for f, m, s in zip(enc.columns, imp.importances_mean, imp.importances_std, strict=True)),
+        (
+            {"feature": f, "importance": round(float(m), 5), "std": round(float(s), 5)}
+            for f, m, s in zip(enc.columns, imp.importances_mean, imp.importances_std, strict=True)
+        ),
         key=lambda r: -float(r["importance"]),
     )
     metrics["permutation_importance"] = importances
@@ -168,21 +206,32 @@ def _baseline(df: pd.DataFrame, enc: FeatureEncoder) -> dict[str, Any]:
     return out
 
 
-def _card(spec: TrainSpec, method: str, metrics: dict[str, Any], df: pd.DataFrame, importances: list[dict[str, Any]], reason: str | None) -> dict[str, Any]:
+def _card(
+    spec: TrainSpec, method: str, metrics: dict[str, Any], df: pd.DataFrame, importances: list[dict[str, Any]], reason: str | None
+) -> dict[str, Any]:
     return {
         "model": spec.name,
         "method": method,
         "target": spec.target_description,
         "features": {"numeric": spec.numeric, "categorical": spec.categorical},
         "split": "time-ordered: first 70% train (last 20% of it used only to calibrate), last 30% validation; embargo = label horizon",
-        "training_window": {"from": int(df[spec.time_col].min()) if len(df) else None, "to": int(df[spec.time_col].max()) if len(df) else None},
-        "rows": int(len(df)),
+        "training_window": {
+            "from": int(df[spec.time_col].min()) if len(df) else None,
+            "to": int(df[spec.time_col].max()) if len(df) else None,
+        },
+        "rows": len(df),
         "seed": spec.seed,
-        "libraries": {"python": platform.python_version(), "scikit-learn": sklearn.__version__, "numpy": np.__version__, "pandas": pd.__version__},
+        "libraries": {
+            "python": platform.python_version(),
+            "scikit-learn": sklearn.__version__,
+            "numpy": np.__version__,
+            "pandas": pd.__version__,
+        },
         "metrics_summary": {k: metrics.get(k) for k in ("auc", "pr_auc", "brier", "brier_baseline", "ece", "base_rate")},
         "top_features": importances[:5],
         "cold_start_reason": reason,
-        "limitations": spec.notes + [
+        "limitations": [
+            *spec.notes,
             "Metrics are measured on a single time-ordered validation window and do not guarantee future performance.",
             "Per-prediction explanations are occlusion effects (feature reset to a reference value), not Shapley values.",
         ],

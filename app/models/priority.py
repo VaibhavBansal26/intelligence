@@ -24,7 +24,15 @@ class PriorityWeights:
 
 
 def rank_open_rooms(
-    open_rooms: pd.DataFrame, scorer: Scorer, *, as_of: int, sla_s: float, vip_threshold: float, weights: PriorityWeights | None = None, limit: int = 50, explain: bool = True,
+    open_rooms: pd.DataFrame,
+    scorer: Scorer,
+    *,
+    as_of: int,
+    sla_s: float,
+    vip_threshold: float,
+    weights: PriorityWeights | None = None,
+    limit: int = 50,
+    explain: bool = True,
 ) -> list[dict[str, Any]]:
     w = weights or PriorityWeights()
     if open_rooms.empty:
@@ -64,11 +72,29 @@ def rank_open_rooms(
         if reopen[pos] > 0:
             reasons.append(f"reopened {int(row.reopen_count)} times")
         reasons.append(f"model P(SLA breach) = {p[pos]:.2f} ({scorer.method})")
-        items.append({
-            "rank": rank, "room_id": row.room_id, "source_id": row.source_id, "contact_key": row.contact_key, "inbox_id": row.inbox_id,
-            "priority_score": round(float(score[pos]), 1), "sla_breach_probability": round(float(p[pos]), 4), "churn_risk": round(float(churn[pos]), 3),
-            "waiting_hours": round(float(wait_s[pos] / 3600), 2), "vip": bool(vip[pos]), "sla_breached": bool(breached[pos]),
-            "components": {"breach_model": round(float(w.breach * p[pos] * 100), 1), "urgency": round(float(w.urgency * urg[pos] * 100), 1), "sentiment": round(float(w.sentiment * neg[pos] * 100), 1), "waiting": round(float(w.waiting * wait_ratio[pos] * 100), 1), "vip": round(float(w.vip * vip[pos] * 100), 1), "reopen": round(float(w.reopen * reopen[pos] * 100), 1)},
-            "reasons": reasons, "model_factors": factors[rank - 1],
-        })
+        items.append(
+            {
+                "rank": rank,
+                "room_id": row.room_id,
+                "source_id": row.source_id,
+                "contact_key": row.contact_key,
+                "inbox_id": row.inbox_id,
+                "priority_score": round(float(score[pos]), 1),
+                "sla_breach_probability": round(float(p[pos]), 4),
+                "churn_risk": round(float(churn[pos]), 3),
+                "waiting_hours": round(float(wait_s[pos] / 3600), 2),
+                "vip": bool(vip[pos]),
+                "sla_breached": bool(breached[pos]),
+                "components": {
+                    "breach_model": round(float(w.breach * p[pos] * 100), 1),
+                    "urgency": round(float(w.urgency * urg[pos] * 100), 1),
+                    "sentiment": round(float(w.sentiment * neg[pos] * 100), 1),
+                    "waiting": round(float(w.waiting * wait_ratio[pos] * 100), 1),
+                    "vip": round(float(w.vip * vip[pos] * 100), 1),
+                    "reopen": round(float(w.reopen * reopen[pos] * 100), 1),
+                },
+                "reasons": reasons,
+                "model_factors": factors[rank - 1],
+            }
+        )
     return items

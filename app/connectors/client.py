@@ -35,6 +35,10 @@ class ConnectorSchemaError(ConnectorError):
     """The remote payload does not look like the contract."""
 
 
+class BudgetExceeded(ConnectorError):
+    """A per-account resource budget (landed rows) was reached; not retryable."""
+
+
 class ConnectorUnavailable(ConnectorError):
     retryable = True
 

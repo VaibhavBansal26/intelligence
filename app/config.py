@@ -54,6 +54,15 @@ class Settings(BaseSettings):
     worker_poll_s: float = 2.0
     sync_interval_s: int = 0  # 0 disables the periodic scheduler
 
+    # scale and per-account budgets
+    columnar_dir: str = ""  # Parquet event store root; empty disables the columnar tee
+    columnar_buckets: int = 32
+    account_max_concurrent_jobs: int = 2
+    account_max_event_rows: int = 0  # 0 = unlimited landed events per account
+    ml_max_training_rows: int = 500_000
+    model_cache_size: int = 32
+    batch_max_rows: int = 5000
+
     # ML
     seed: int = 1234
     label_horizon_days: int = 14

@@ -12,11 +12,12 @@ from typing import Any
 
 import httpx
 from pydantic import ValidationError
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 
 from app.clock import Clock
 from app.config import Settings
 from app.connectors.client import (
+    BudgetExceeded,
     ConnectorAuthError,
     ConnectorError,
     ConnectorSchemaError,
@@ -245,7 +246,9 @@ class IngestService:
         async def flush(next_cursor: str | None) -> None:
             nonlocal buffer
             rows, buffer = buffer, []
-            await asyncio.to_thread(self._write_rows, resource, table, rows, account_id, source_id, max_ts, next_cursor, from_ts)
+            await asyncio.to_thread(
+                self._write_rows, resource, table, rows, account_id, source_id, max_ts, next_cursor, from_ts, watermark
+            )
 
         async def on_page(next_cursor: str | None) -> None:
             if next_cursor is None or len(buffer) >= chunk_rows:
@@ -280,6 +283,7 @@ class IngestService:
         max_ts: int,
         next_cursor: str | None,
         from_ts: int,
+        prev_watermark: int | None = None,
     ) -> None:
         with session_scope(self._sessions) as s:
             writer = upsert if resource in MUTABLE else insert_ignore
@@ -289,6 +293,48 @@ class IngestService:
             if max_ts:
                 st.watermark = max(st.watermark or 0, max_ts) if next_cursor is None else st.watermark
             st.cursor = json.dumps({"c": next_cursor, "from": from_ts}) if next_cursor else None
+            cap = self._settings.account_max_event_rows
+            if resource == "events" and cap:
+                total = int(
+                    s.execute(select(func.count()).select_from(m.Event).where(m.Event.account_id == account_id)).scalar() or 0
+                )
+                if total + len(rows) > cap:
+                    s.commit()
+                    raise BudgetExceeded(
+                        f"account event budget reached ({cap} rows); raise ACCOUNT_MAX_EVENT_ROWS or archive data"
+                    )
+        if resource == "events" and self._settings.columnar_dir and rows:
+            self._tee_columnar(account_id, rows, prev_watermark)
+
+    def _tee_columnar(self, account_id: str, rows: list[dict[str, Any]], prev_watermark: int | None) -> None:
+        """Append newly seen events to the Parquet store. Only rows after the previous watermark are teed, so a
+        re-read of the same window is not double counted (boundary-second ties are covered by the SQL tables)."""
+        import polars as pl
+
+        from app.columnar.store import ParquetEventStore, contact_hash_expr
+
+        fresh = [r for r in rows if prev_watermark is None or r["ts"] > prev_watermark]
+        if not fresh:
+            return
+        df = pl.DataFrame(
+            {
+                "ts": [r["ts"] for r in fresh],
+                "type": [r["type"] for r in fresh],
+                "funnel_id": [r["funnel_id"] for r in fresh],
+                "step_id": [r["step_id"] for r in fresh],
+                "contact_key": [r["contact_key"] for r in fresh],
+                "amount": [r["amount"] for r in fresh],
+            },
+            schema={
+                "ts": pl.Int64,
+                "type": pl.String,
+                "funnel_id": pl.String,
+                "step_id": pl.String,
+                "contact_key": pl.String,
+                "amount": pl.Float32,
+            },
+        ).with_columns(contact_hash_expr().alias("contact_h"))
+        ParquetEventStore(self._settings.columnar_dir, self._settings.columnar_buckets).append(account_id, df)
 
     async def _sync_funnels(self, client: SourceClient, account_id: str, source_id: str, rr: ResourceResult) -> None:
         now = int(self._clock())
