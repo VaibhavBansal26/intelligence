@@ -71,3 +71,11 @@ def map_unique(series: pd.Series, fn: Callable[[object], float]) -> pd.Series:
     """Apply a scalar function once per distinct value (fast on categorical-like columns)."""
     mapping = {u: fn(u) for u in series.dropna().unique()}
     return series.map(mapping).astype("float64")
+
+
+def flag_eq(series: pd.Series, value: str) -> pd.Series:
+    """1 where the (nullable, case-insensitive) string column equals `value`, else 0.
+
+    The comparison on a pandas string column yields <NA> for null rows; real exports have null `ai_intent` for every
+    room the app's triage has not labelled, so a plain `.astype(int)` crashes on them."""
+    return series.astype("string").str.lower().eq(value).fillna(False).astype(int)

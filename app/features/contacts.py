@@ -10,7 +10,7 @@ from sqlalchemy import Connection, case, distinct, func, select
 from sqlalchemy.orm import Session
 
 from app.db import models as m
-from app.features.norm import map_unique, sentiment_value, urgency_value
+from app.features.norm import flag_eq, map_unique, sentiment_value, urgency_value
 
 PROFILE_COLUMNS = [
     "contact_key",
@@ -109,7 +109,7 @@ def conversation_profile(conn: Connection, account_id: str) -> pd.DataFrame:
     rooms["sent"] = map_unique(rooms["ai_sentiment"], sentiment_value)
     rooms["urg"] = map_unique(rooms["ai_urgency"], urgency_value)
     rooms["is_open"] = rooms["closed_at"].isna().astype(int)
-    rooms["purchase"] = (rooms["ai_intent"].astype("string").str.lower() == "purchase").astype(int)
+    rooms["purchase"] = flag_eq(rooms["ai_intent"], "purchase")
     g = rooms.groupby("contact_key")
     return pd.DataFrame(
         {

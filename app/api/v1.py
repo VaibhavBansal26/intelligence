@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
@@ -98,7 +99,18 @@ def _cached(request: Request, c: Container, p: Principal, build: Any, salt: str 
 def _jsonable(obj: Any) -> Any:
     from fastapi.encoders import jsonable_encoder
 
-    return jsonable_encoder(obj)
+    return _finite(jsonable_encoder(obj))
+
+
+def _finite(obj: Any) -> Any:
+    """NaN / +-inf are not valid JSON (and crashed the response encoder): they become null."""
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _finite(v) for k, v in obj.items()}
+    if isinstance(obj, list | tuple):
+        return [_finite(v) for v in obj]
+    return obj
 
 
 # --- auth / account -----------------------------------------------------------------------------------

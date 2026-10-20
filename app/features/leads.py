@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import models as m
-from app.features.norm import map_unique, sentiment_value, urgency_value
+from app.features.norm import flag_eq, map_unique, sentiment_value, urgency_value
 
 NUMERIC_FEATURES = [
     "n_page_views_pre",
@@ -159,7 +159,7 @@ def _conversation_pre_features(leads: pd.DataFrame, conn: object, account_id: st
         return _empty_conv(leads)
     rooms["sent"] = map_unique(rooms["ai_sentiment"], sentiment_value)
     rooms["urg"] = map_unique(rooms["ai_urgency"], urgency_value)
-    rooms["purchase"] = (rooms["ai_intent"].astype("string").str.lower() == "purchase").astype(int)
+    rooms["purchase"] = flag_eq(rooms["ai_intent"], "purchase")
     base = leads[["lead_id", "contact_key", "created_at"]].merge(rooms, on="contact_key", how="inner")
     base = base[base["room_at"] < base["created_at"]]
     if base.empty:

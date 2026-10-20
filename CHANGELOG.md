@@ -9,6 +9,10 @@ All notable changes are recorded here ([Keep a Changelog](https://keepachangelog
 - Per-account budgets: concurrent jobs with fair scheduling, `ACCOUNT_MAX_EVENT_ROWS`, `ML_MAX_TRAINING_ROWS`.
 - `docs/SCALING.md`, `docs/PERFORMANCE.md`, ADR 0009; benchmarks for 100M/300M events, scoring and training.
 
+### Fixed
+- Training and `/v1/leads/scores`, `/v1/segments`, `/v1/insights` crashed on real data: rooms the apps' AI triage did not label have a null `ai_intent` (pandas `<NA>` in an integer cast).
+- `/v1/rankings/conversations/open` answered 500 when a feature was NaN (not valid JSON); NaN and infinities are now `null` in every `/v1` JSON response.
+
 ## [0.1.0] - 2026-10-19
 ### Added
 - Multi-tenant FastAPI service: accounts, hashed scoped API keys, optional JWT, RBAC (`admin|analyst|viewer`), operator `/admin` API.
