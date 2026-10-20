@@ -74,7 +74,9 @@ API=http://127.0.0.1:8000
 curl -s -X POST $API/admin/accounts -H "X-Admin-Key: $ADMIN_API_KEY" -H 'content-type: application/json' -d '{"name":"Acme"}'
 # {"account":{"id":"..."},"api_key":"isk_xxxxxxxx_...","key_id":"..."}
 
-# 2. register sources (each source gets the pepper of ITS app; the real apps generate different ones, see step 4)
+# 2. register sources. Best: give both apps the SAME pepper first (PUT /api/v1/analytics/identity-pepper in each, see
+#    APPROACH.md "Combining the two apps") and register that value for both. Apps that still have their own random
+#    peppers need step 4.
 curl -s -X POST $API/v1/sources -H "Authorization: Bearer $KEY" -H 'content-type: application/json' -H 'Idempotency-Key: src-funnels-1' \
   -d '{"kind":"funnels","name":"funnels","base_url":"https://funnels.example.com","api_key":"fa_live_...","identity_pepper":"..."}'
 
@@ -83,7 +85,7 @@ curl -s -X POST "$API/v1/sync?wait=true" -H "Authorization: Bearer $KEY" -H 'con
 curl -s -X POST "$API/v1/models/train?wait=true" -H "Authorization: Bearer $KEY" -H 'content-type: application/json' -d '{}'
 curl -s "$API/v1/rankings/steps" -H "Authorization: Bearer $KEY"
 
-# 4. only when the two apps have different peppers (GET /v1/join shows joined_contacts 0 and a pepper warning):
+# 4. only when the two apps have different peppers (not needed once they share one) (GET /v1/join shows joined_contacts 0 and a pepper warning):
 #    send a contact list you already hold. E-mails are hashed in memory with each source's pepper and never stored.
 curl -s -X POST $API/v1/identity/bridge -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
   -d '{"emails":["ada@example.com","grace@example.com"]}'

@@ -14,6 +14,10 @@ All notable changes are recorded here ([Keep a Changelog](https://keepachangelog
 - Per-account budgets: concurrent jobs with fair scheduling, `ACCOUNT_MAX_EVENT_ROWS`, `ML_MAX_TRAINING_ROWS`.
 - `docs/SCALING.md`, `docs/PERFORMANCE.md`, ADR 0009; benchmarks for 100M/300M events, scoring and training.
 
+### Changed
+- Integration run (`scripts/integration/`) for the new apps: the traffic generator reads `doc.forms` / `doc.products` of Funnels' GrapesJS page documents (`{version: 2, project, forms, products}`) instead of the removed `doc.blocks`, and the apps' own `npm run seed` replaces the seed workaround (`seed_funnels.mjs` removed). New shared-pepper scenario: the same random pepper is `PUT` into both apps, both sources are registered with it and the cross-app join finds the shared people without the identity bridge (367 of 367 contacts, 62.2% coverage of the smaller side); the old different-peppers behaviour (join 0 plus warning, bridge recovers) stays as its own assertion. 137 checks.
+- Docs (INTEGRATION, INTEGRATION-FINDINGS, APPROACH, API, ARCHITECTURE, RUNBOOK): findings N1 to N4 marked fixed on the Node side with commit references; setting one pepper in both apps is the recommended setup, the bridge is for apps that cannot share one.
+
 ### Fixed
 - Training and `/v1/leads/scores`, `/v1/segments`, `/v1/insights` crashed on real data: rooms the apps' AI triage did not label have a null `ai_intent` (pandas `<NA>` in an integer cast).
 - `/v1/rankings/conversations/open` answered 500 when a feature was NaN (not valid JSON); NaN and infinities are now `null` in every `/v1` JSON response.

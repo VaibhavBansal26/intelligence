@@ -23,10 +23,15 @@ The service ranks and recommends; it does not mutate the source apps.
 
 ## Combining the two apps
 Contacts are linked by `contact_key = HMAC-SHA256(pepper, lower(trim(email)))`. The contract assumes both apps use the
-same per-workspace pepper. **The real apps do not**: each generates its own random pepper and neither can set it
-(only rotate it to a new random value; found by the integration run, [INTEGRATION-FINDINGS.md](INTEGRATION-FINDINGS.md)),
-so an e-mail has a different key in each and the join is empty. Until the apps can import a pepper, the service offers
-an **identity bridge**: `POST /v1/identity/bridge` takes a contact list the customer already has (CRM export,
+same per-workspace pepper. **Out of the box the real apps do not share one**: each generates its own random pepper, so
+an e-mail has a different key in each and the join is empty (found by the integration run,
+[INTEGRATION-FINDINGS.md](INTEGRATION-FINDINGS.md)). Both apps can now import a pepper: `PUT /api/v1/analytics/identity-pepper`
+with `{"pepper": "<64 hex>"}` (a user session with `analytics_identity:manage` + `analytics:export`; an API key can read, not set),
+`openssl rand -hex 32` makes a suitable value, equal `fingerprint`s in both apps confirm it. **Preferred setup: set the same
+pepper in both apps and register that value for both sources**; the join then needs no bridge (integration run: 367 of 367
+shared people, [INTEGRATION.md](INTEGRATION.md)). Changing a pepper changes every key, so update the sources
+(`PATCH /v1/sources/{id}` with the new `identity_pepper`) and re-sync. For apps that already hold different peppers, or
+when you cannot change them, the service offers an **identity bridge**: `POST /v1/identity/bridge` takes a contact list the customer already has (CRM export,
 newsletter list), computes each address's key under every source's pepper in memory (the address is discarded),
 stores only the key pairs (`contact_links`), re-keys the other source's rooms to the canonical key (the Funnels
 key; the original stays in `rooms.contact_key_raw`) and re-keys rows that arrive later. People missing from the list

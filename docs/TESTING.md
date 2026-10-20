@@ -19,7 +19,7 @@ features top the permutation importance, the injected anomaly day is found with 
 | End to end | `tests/e2e` | admin creates account -> sources registered -> sync -> train -> rankings -> insights -> ask, all through HTTP against the fake apps |
 | Scale | `tests/scale`, `tests/perf` | Parquet store and bucket fan-out, incremental refresh, batch scoring, >5000 scores/s, model cache hot swap, per-account budgets and fair queue, concurrent workers never double-claim, 2M-event bounded-memory ingest (`-m slow`) |
 | Real-app recordings | `tests/connectors/test_real_apps.py`, `tests/fixtures/real/` | responses recorded from the real Funnels and Conversations apps: record models on real shapes (null AI fields, millisecond timestamps, `exit_rate: null`, `{data,next_cursor}` structure), the real 429 and its headers, and sync, training and every endpoint on the recorded exports |
-| Integration | `scripts/integration/run.sh` ([INTEGRATION.md](INTEGRATION.md)) | not part of `pytest`: the real apps and this service together, about 106 checks, about 5.5 minutes |
+| Integration | `scripts/integration/run.sh` ([INTEGRATION.md](INTEGRATION.md)) | not part of `pytest`: the real apps and this service together, 137 checks, about 6 minutes |
 | Docs | `tests/test_docs.py` | relative links and anchors, index completeness, config and env parity, OpenAPI and CONFIGURATION freshness, every route documented, Mermaid structure and real parser, CHANGELOG `Unreleased` |
 | Migrations | `tests/test_migrations.py` | Alembic head equals the SQLAlchemy models |
 
@@ -28,7 +28,7 @@ The fake apps could not find what the real ones did (null `ai_intent`, NaN featu
 
 ## Current results (2026-10-20)
 277 tests pass in the default suite (1 deselected `slow` test: the 2M-event memory proof, last run 2026-10-19: 200k rows peak 109.5 MB, 2M rows peak 117.2 MB; not re-run). Line coverage of `app/` is **93%** (5,441 statements); lowest are
-the CLI entry points (`app/worker.py`, the docs/OpenAPI generator mains), covered indirectly by the docs tests. `ruff check`, `ruff format --check` and `mypy app` (65 files) are clean. The integration run ([INTEGRATION.md](INTEGRATION.md)), 106 checks, passed against the real apps on 2026-10-20 (5 min 30 s to 6 min 20 s on an Apple M-series laptop under load).
+the CLI entry points (`app/worker.py`, the docs/OpenAPI generator mains), covered indirectly by the docs tests. `ruff check`, `ruff format --check` and `mypy app` (65 files) are clean. The integration run ([INTEGRATION.md](INTEGRATION.md)), 137 checks, passed against the real apps on 2026-10-20 (5 min 30 s to 6 min 20 s on an Apple M-series laptop under load).
 Mypy runs on `app/` without pandas stubs (they produced hundreds of unactionable errors); strictness is `disallow_untyped_defs` plus `check_untyped_defs`.
 
 ## Running

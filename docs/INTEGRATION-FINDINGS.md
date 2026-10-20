@@ -2,37 +2,55 @@
 
 Result of running the Intelligence service against the **real** Node apps for the first time (2026-10-20, macOS, Node 24.11, Python 3.13, SQLite everywhere, apps in dev mode). How it was run and how to repeat it: [INTEGRATION.md](INTEGRATION.md). Contract: `ANALYTICS-CONTRACT.md` v1 (outside this repo); schemas of the apps: `docs/analytics-api/` in each Node repo; schemas of this service: [`contracts/`](../contracts/README.md).
 
-**Summary.** The service and the two real apps work together end to end: sync (13,000 events, 1,100 leads, 590 rooms, 4,000 message records landed exactly once and match the apps' own exports), training, rankings, lead scores, open-conversation ranking, segments, anomalies, insights and `/v1/ask` all answer on real data, and the key failure modes (revoked, expired, wrong-workspace, read-only keys, 429s, empty workspaces) behave. It did **not** work out of the box: the first sync succeeded, but training and five endpoints crashed on real data, and the cross-app join was impossible because the real apps cannot share an identity pepper. Everything on this side is fixed (section 3); the pepper problem needs a Node-side change and is bridged here meanwhile (section 1, N3).
+**Summary.** The service and the two real apps work together end to end: sync (13,000 events, 1,100 leads, 590 rooms, 4,000 message records landed exactly once and match the apps' own exports), training, rankings, lead scores, open-conversation ranking, segments, anomalies, insights and `/v1/ask` all answer on real data, and the key failure modes (revoked, expired, wrong-workspace, read-only keys, 429s, empty workspaces) behave. It did **not** work out of the box: the first sync succeeded, but training and five endpoints crashed on real data, and the cross-app join was impossible because the real apps cannot share an identity pepper. Everything on this side is fixed (section 3). **Update 2026-10-20 (second run):** the Node apps have since fixed N1 to N4 (importable identity pepper, one pepper endpoint, seed scripts); with the same pepper set in both apps the cross-app join finds all 367 shared people without the bridge (section 1a). The run now has 137 checks.
 
 ## 1. Deviations owned by the Node apps (not changed here)
 
-Ordered by impact. "Contract" is `ANALYTICS-CONTRACT.md`.
+Ordered by impact. "Contract" is `ANALYTICS-CONTRACT.md`. Status after the second run (apps at Funnels `082fe1b`, Conversations `b265bdb`):
 
-### N3. The two apps cannot share an identity pepper, so `contact_key` never joins (high)
+| # | Finding | Status | Fixed in |
+|---|---|---|---|
+| N3 | apps cannot share an identity pepper | **fixed**, verified | Funnels `a1d75c0`, Conversations `5de8f96` |
+| N3b | Conversations pepper tied to `JWT_SECRET` | **fixed** (dedicated `DATA_ENCRYPTION_KEY`), not re-tested here | Conversations `5de8f96` |
+| N4 | pepper endpoint differs between the apps | **fixed**, verified; one small difference left (below) | Funnels `a1d75c0`, Conversations `5de8f96` |
+| N1 | `npm run seed` crashes in Funnels | **fixed**, verified (`run.sh` uses it now) | Funnels `9e66c0f` |
+| N2 | `npm run seed` never exits in Conversations | **fixed**, verified | Conversations `64d8d9d` |
+| N5 | page-size limits above the contract's 1,000 | open (informational, still `<=20000` / `<=5000`) | |
+| N6, N8 | small shape differences, `PORT=0` | open (informational) | |
+| N7 | rate-limit observations | partly pinned by tests in Conversations `64d8d9d`; the used-key effect (7 of 10 requests) is unchanged | |
+
+Findings N1 to N4 are kept below as found, each with what changed.
+
+### N3. The two apps cannot share an identity pepper, so `contact_key` never joins (high) - FIXED (Funnels `a1d75c0`, Conversations `5de8f96`)
+- **Now:** `PUT /api/v1/analytics/identity-pepper {pepper, confirm?}` in both apps (user session with `analytics_identity:manage` + `analytics:export`), `GET` answers `{pepper, version, algorithm, fingerprint, rotatedAt}`. Verified by the run: weak values (too short, one repeated character, hex under 64 characters, non-ASCII) are `400 INVALID_PEPPER` and change nothing, a wrong `confirm` is `400 PEPPER_CONFIRM_MISMATCH`, importing a random 64-hex value gives equal fingerprints (`SHA-256(pepper)[:8]`) in both apps, `version` goes up, importing the stored value again changes nothing, and every exported `contact_key` afterwards equals `HMAC-SHA256(shared pepper, lower(trim(email)))`. Result of the join: section 1a. The text below is what was found.
 - **Contract:** the workspace admin copies the pepper "into the Python service so two apps owned by the same customer produce the SAME key and can be joined".
 - **Actual:** each app generates its own random 32-byte pepper per workspace and offers only *view* and *rotate-to-a-new-random-value*; there is no way to set or import a value. Funnels: `server/src/services/analyticsapi.ts`, `identityPepper()` (`randomBytes(32)`, stored in `workspaces.identity_pepper`) and `rotatePepper()`; routes `GET /api/v1/analytics/identity-pepper` and `POST .../rotate` (`server/src/routes/analyticsapi.ts:60-61`). Conversations: `server/src/services/analytics.ts`, `getPepper()` line 20 and `rotatePepper()` line 30 (`randomBytes(32)`), routes in `server/src/routes/analytics.ts:24-28`.
 - **Observed:** the same e-mails produce different keys per app (verified by recomputing every exported key from the apps' own contact lists: all keys match their own app's pepper, and none match across apps). `GET /v1/join` with both real peppers: 1,122 Funnels contacts, 590 Conversations contacts, 0 joined, although 367 people are in both.
 - **Needed on the Node side:** a way to set the pepper (for example `PUT /identity-pepper {pepper}` with the same permission as rotate, audited), so the customer can paste one value into both apps.
 - **Mitigation here:** `POST /v1/identity/bridge` (contact list in, key pairs out). With a list of the 760 known addresses the join recovered 367 of 367 people in both apps.
 
-### N3b. Conversations ties the pepper to `JWT_SECRET`; changing the secret breaks every export (high, operational)
+### N3b. Conversations ties the pepper to `JWT_SECRET`; changing the secret breaks every export (high, operational) - FIXED (Conversations `5de8f96`)
+- **Now (per the app's docs, `docs/ANALYTICS.md`):** the pepper is encrypted under `DATA_ENCRYPTION_KEY`, independent of `JWT_SECRET`; production requires the key (`503 DATA_ENCRYPTION_KEY_REQUIRED`), an unreadable pepper is `409 PEPPER_UNREADABLE`. **Not re-tested here:** the run keeps one fixed `JWT_SECRET` and derives the data key in dev; the secret-change reproduction below was not repeated.
 - `getPepper()` stores the pepper encrypted with `JWT_SECRET` (`server/src/services/analytics.ts:22`, `decryptSecret(ctx.config.JWT_SECRET, ...)`). In development `JWT_SECRET` is generated at each start, in production it is a normal secret that gets rotated.
 - **Reproduced:** copy of a database whose pepper was created under secret A, server started with secret B, `GET /api/analytics/identity-pepper` answers `500` and the log says `Unsupported state or unable to authenticate data` (`Decipheriv.final`). `exportRooms` and `overview` (by-agent keys) call the same function, so the analytics exports fail the same way.
 - **Needed:** a separate stored key for the pepper, or re-encryption on secret rotation. Until then rotating `JWT_SECRET` must be treated as destroying the identity pepper. (Funnels stores the pepper in clear in `workspaces`, so it is not affected, but that is also a data-at-rest question.)
 
-### N4. Pepper endpoint differs between the apps and from the contract (medium)
+### N4. Pepper endpoint differs between the apps and from the contract (medium) - FIXED (Funnels `a1d75c0`, Conversations `5de8f96`)
+- **Now:** both apps serve `GET|PUT /api/v1/analytics/identity-pepper` with the same response (checked against each app's `identity-pepper.schema.json`); an API key with `analytics:export` + `analytics_identity:manage` can read it in **both** apps (200, same value as the session), a key without the extra scope gets 403, and no API key can `PUT` it. **Still different:** the refusal of a key on `PUT` is `401 UNAUTHORIZED` in Funnels and `403 SESSION_REQUIRED` in Conversations (both refuse; the codes differ). Conversations keeps `/api/analytics/identity-pepper` as an alias. The text below is what was found.
 - **Contract:** `GET /api/v1/analytics/identity-pepper`, requires `analytics:export` + `analytics_identity:manage`.
 - **Funnels:** `GET /api/v1/analytics/identity-pepper` exists but takes a **user session token**, not an API key ("API keys can never read it", `docs/ANALYTICS-API.md`); response `{ "pepper", "rotatedAt" }`. An API key gets 401/403 (verified).
 - **Conversations:** the session endpoint is `GET /api/analytics/identity-pepper` (no `/v1`), response `{ "pepper", "version", "algorithm" }`; `GET /api/v1/analytics/identity-pepper` exists and **does** accept an API key that carries the extra scope `analytics_identity:manage` (verified: 200 with the same pepper). So one app lets a leaked integration key recompute contact keys from e-mails, the other forbids it. Funnels' key scopes (`analytics:read`, `analytics:export`) have no equivalent scope.
 - **Needed:** one documented path, one response shape, one stance on API-key access.
 
-### N1. `npm run seed` crashes in Funnels (medium, dev experience)
+### N1. `npm run seed` crashes in Funnels (medium, dev experience) - FIXED (Funnels `9e66c0f`)
+- **Now:** `npm run seed` completes (about 2 s); `run.sh` uses it and `seed_funnels.mjs` was removed.
 - `cd funnels && npm run seed` (`tsx src/seed.ts`) fails at import time: `ReferenceError: Cannot access 'ListQuery' before initialization` at `server/src/routes/spec.ts:142`. `src/index.ts` (the server) loads fine, so it is an import-order cycle that only the seed entry point triggers: `seed.ts` imports `ai/service.ts` first, which reaches `routes/spec.ts` before `services/funnels.ts` (`ListQuery`, line 52) has been evaluated.
-- Workaround used here: `scripts/integration/seed_funnels.mjs` imports `src/app.ts` first (the order the server uses) and then calls `seedDemo()`.
+- Workaround used until the fix: a wrapper that imported `src/app.ts` first (the order the server uses) and then called `seedDemo()`.
 
-### N2. `npm run seed` in Conversations never exits (low)
+### N2. `npm run seed` in Conversations never exits (low) - FIXED (Conversations `64d8d9d`)
+- **Now:** the process exits after "Seeded demo workspace" (about 2 s); `run.sh` no longer waits for the line and kills it.
 - It prints `Seeded demo workspace "Demo Co"...` and closes the database (`server/src/seed.ts:163`) but the process stays alive (something keeps the event loop open); it ran until killed (about 100 s in a `timeout 100`). The success branch has no `process.exit(0)` (the failure branch has `process.exit(1)`, line 169).
-- Workaround: `run.sh` waits for the success line, then stops the process.
+- Workaround used until the fix: `run.sh` waited for the success line, then stopped the process.
 
 ### N5. Page-size limits are above what the contract says (informational)
 - Contract: lists `limit <= 1000`. Real: Funnels exports default to 5,000 and accept 20,000 (`limit=99999` is `400`), Conversations exports accept up to 5,000 (`400 VALIDATION_ERROR`, `limit: Too big: expected number to be <=5000`). With exports limited to 10 requests per minute the larger pages matter; the connector now uses them (section 3) and falls back to 1,000 on a 400.
@@ -57,6 +75,18 @@ Ordered by impact. "Contract" is `ANALYTICS-CONTRACT.md`.
 - Funnels' public APIs always stamp "now" (no `at` for browsers); history can only be built with a shifted clock (as the harness does) or the app's own seed.
 - Conversations' team API lists use `pagination.next_cursor`, its analytics API uses top-level `next_cursor` (both documented; the harness had to handle both).
 
+## 1a. The cross-app join with a shared pepper (second run, 2026-10-20)
+
+Same data as section 4 (1,122 Funnels contacts, 590 Conversations contacts with an e-mail, 367 people in both). Three joins, each in its own Intelligence account with fresh API keys:
+
+| Setup | Joined contacts | Coverage of the smaller side (Conversations) | Warnings |
+|---|---|---|---|
+| apps with their own random peppers (the old behaviour), no bridge | 0 of 367 | 0% | `pepper_fingerprint_mismatch` |
+| same peppers as above + `POST /v1/identity/bridge` with the list of the known addresses | 367 of 367 | 62.2% | `identity_bridge_active` |
+| **the same random 64-hex pepper `PUT` into both apps**, both sources registered with it, no bridge | **367 of 367** | **62.2%** | none |
+
+Coverage is `joined / min(funnel contacts, conversation contacts)`: 62.2% because 590 - 367 = 223 of the Conversations contacts never opted in to a funnel (the generator makes 65% of rooms come from funnel leads); 100% of the people who exist in both apps are joined. The bridge needed a contact list; the shared pepper needs nothing but the same value in both apps. The run asserts all three, plus that the shared-pepper join equals the bridge result (within 2%).
+
 ## 2. Contract conformance of the real responses
 
 Validated by `verify.py` against the Node repos' schemas (`docs/analytics-api/*.json`) and this repo's [`contracts/`](../contracts/):
@@ -72,6 +102,7 @@ Validated by `verify.py` against the Node repos' schemas (`docs/analytics-api/*.
 | `GET /schema` returns an integer `schema_version` (1) in both apps | pass |
 | `tz` only buckets (New York days start 04:00Z), range over 366 days is `400`, ids of another workspace `404`, revoked / expired / malformed key `401` with the contract error body, read-only key on an export `403`, user session token on the analytics API rejected | pass |
 | `rooms_opened` in `/overview` equals the number of exported rooms (591 = 591) | pass |
+| Pepper endpoints (second run): `GET|PUT /api/v1/analytics/identity-pepper` response against `identity-pepper.schema.json` in both apps, API-key read with the two scopes, refusals | pass |
 | Pepper algorithm: every exported `contact_key` equals `HMAC-SHA256(pepper, lower(trim(email)))` for an e-mail read from the app's own API, including addresses typed with capitals or padding | pass (Funnels 1,122 leads and all event keys; Conversations 590 contacts) |
 
 Not deviations but different from the contract text: N3 to N8 above.
@@ -105,6 +136,9 @@ Funnels: 7 live funnels (4 from the app's seed and templates plus 3 created thro
 
 ## 5. Not verified, or only partly
 
+- **Page documents of Funnels** (GrapesJS projects, `doc_json` version 2) were exercised only as far as the harness reads them: `GET .../steps/:sid/page` gives `doc.forms` and `doc.products` (derived by the server), which the traffic generator uses to post opt-ins and checkouts. Pages are never saved by the harness, so `PUT .../page` with `version` (409 `VERSION_CONFLICT`) is not exercised. Funnels' `docs/API.md` still shows the old `{"version":1,"blocks":[...]}` body in its "Edit a page" example (the server converts version 1 on write; not tested here).
+- **`DATA_ENCRYPTION_KEY`** (required in production for the pepper) was not exercised; dev derives a key and warns. The `JWT_SECRET` change of N3b was not repeated.
+- **Funnels' import form**: the settings UI has no pepper import form yet (its docs say so); only the API was used.
 - **Redis and PostgreSQL** were not used by any of the three programs (SQLite, in-memory limiters, DB queue). The apps' Redis limiter, the Postgres path, the Cloudflare edge and multi-node behaviour are untested here.
 - **Dev mode only**; the apps' production mode (required `JWT_SECRET`, HTTPS, trusted proxies) was not exercised. Public traffic was generated with the apps' rate limits relaxed and a shifted clock (phase A), then everything was restarted with defaults for the verification (phase B); the history therefore never passed through the real public rate limiters.
 - **The LLM layer** ran offline (no API key): templates and deterministic answers only. The apps' own AI triage used its offline heuristic provider, so `ai_intent`, `ai_sentiment` and `ai_urgency` come from keyword rules, not a model.

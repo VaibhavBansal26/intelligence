@@ -138,7 +138,7 @@ erDiagram
 ```
 
 `contact_key` is the join column between the Funnels and Conversations tables. There is no foreign key: it is an
-HMAC value produced independently by each app. The real apps use different peppers, so `contact_links` (filled by
+HMAC value produced independently by each app. Unless the apps are given the same pepper (both can import one), they use different peppers, and then `contact_links` (filled by
 `POST /v1/identity/bridge`) maps a source's key to the canonical (Funnels) key; rooms keep the key as exported in
 `contact_key_raw` and carry the canonical one in `contact_key`.
 
