@@ -32,6 +32,7 @@ Open `http://127.0.0.1:8000/docs` for the interactive OpenAPI UI. No API key for
 | `make docs` | regenerate `docs/CONFIGURATION.md` and `docs/openapi.json` |
 | `make docs-check` | fail on docs drift |
 | `make bench` | 2M-event ingest benchmark |
+| `scripts/integration/run.sh` | the whole service against the REAL Funnels and Conversations apps (about 5.5 minutes, [docs/INTEGRATION.md](docs/INTEGRATION.md)) |
 
 ## Configuration summary
 Everything is an environment variable ([docs/CONFIGURATION.md](docs/CONFIGURATION.md), generated). In production `ENV=production`

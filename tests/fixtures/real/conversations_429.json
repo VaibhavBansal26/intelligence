@@ -1,0 +1,26 @@
+{
+ "status": 429,
+ "headers": {
+  "ratelimit": "\"analytics.export\";r=0;t=60",
+  "ratelimit-policy": "\"analytics.export\";q=10;w=60",
+  "retry-after": "6",
+  "x-ratelimit-limit": "10",
+  "x-ratelimit-remaining": "0",
+  "x-ratelimit-reset": "60"
+ },
+ "body": {
+  "error": {
+   "code": "RATE_LIMITED",
+   "message": "Too many requests",
+   "retry_after_s": 6,
+   "policy": "analytics.export"
+  }
+ },
+ "ok_headers": {
+  "ratelimit": "\"analytics.export\";r=7;t=18",
+  "ratelimit-policy": "\"analytics.export\";q=10;w=60",
+  "x-ratelimit-limit": "10",
+  "x-ratelimit-remaining": "7",
+  "x-ratelimit-reset": "18"
+ }
+}

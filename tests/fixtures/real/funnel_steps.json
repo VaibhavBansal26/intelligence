@@ -1,0 +1,31 @@
+{
+ "data": [
+  {
+   "step_id": "stp_0mvh06sbv001lAA3mY2B",
+   "name": "Landing page",
+   "order": 1,
+   "visits": 2012,
+   "unique_visits": 1762,
+   "optins": 352,
+   "optin_rate": 0.1998,
+   "orders": 0,
+   "gross": 0,
+   "exit_rate": 0.8015,
+   "avg_time_on_page_s": null
+  },
+  {
+   "step_id": "stp_0mvh06sbv002K_DRhPuZ",
+   "name": "Thank you",
+   "order": 2,
+   "visits": 520,
+   "unique_visits": 513,
+   "optins": 0,
+   "optin_rate": 0,
+   "orders": 0,
+   "gross": 0,
+   "exit_rate": null,
+   "avg_time_on_page_s": null
+  }
+ ],
+ "next_cursor": null
+}

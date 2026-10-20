@@ -4,6 +4,8 @@ All notable changes are recorded here ([Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 ### Added
+- Integration run against the real Funnels and Conversations apps: `scripts/integration/run.sh` (seeds both apps, generates traffic through their HTTP APIs with a shifted clock, restarts them with default limits, syncs, trains, queries and asserts about 106 checks, then stops everything and deletes the temp dir), `docs/INTEGRATION.md`, `docs/INTEGRATION-FINDINGS.md` (deviations owned by the Node apps with endpoints and file/line).
+- Regression fixtures recorded from the real apps in `tests/fixtures/real/` and `tests/connectors/test_real_apps.py`.
 - Identity bridge: `POST /v1/identity/bridge` and `GET /v1/identity/bridge` join contacts across sources whose identity peppers differ (the real apps each generate their own), from a contact list the customer supplies; `contact_links` table and `rooms.contact_key_raw` (migration 0002); `/v1/join` reports `bridge_links` and `identity_bridge_active`.
 - Connector: reads `RateLimit` / `RateLimit-Policy` and waits one refill interval when a bucket is empty instead of provoking a 429; exports request 5,000 rows (`CONNECTOR_EXPORT_PAGE_LIMIT`) and fall back to 1,000 on a 400; `CONNECTOR_MAX_RETRY_AFTER_S` caps how long a `Retry-After` is slept (default 120 s).
 - Anomaly detector: collapse rule (3 consecutive days at or below 40% of the seasonal baseline) for noisy count series.

@@ -19,6 +19,7 @@ uv run ruff check . && uv run ruff format --check .
 uv run mypy app
 uv run pytest --cov=app                    # about 3 minutes
 uv run pytest -m slow -s tests/perf        # 2M-row bounded-memory benchmark
+scripts/integration/run.sh                 # real Funnels + Conversations apps, about 5.5 minutes, needs Node >= 22 (docs/INTEGRATION.md)
 make docs-check                            # config + OpenAPI freshness, links, Mermaid
 ```
 

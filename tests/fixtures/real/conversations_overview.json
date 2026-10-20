@@ -1,0 +1,77 @@
+{
+ "from": "2026-04-23T00:00:00.000Z",
+ "to": "2026-10-20T18:19:04.059Z",
+ "rooms_opened": 591,
+ "rooms_closed": 507,
+ "messages_in": 1995,
+ "messages_out": 1451,
+ "first_response_p50_s": 2223,
+ "first_response_p90_s": 16196,
+ "resolution_p50_s": 5794,
+ "resolution_p90_s": 50633,
+ "csat_avg": 3.74,
+ "csat_count": 172,
+ "by_channel": {
+  "dm": {
+   "messages_in": 1992,
+   "messages_out": 1317
+  },
+  "sms": {
+   "messages_in": 1,
+   "messages_out": 1
+  },
+  "email": {
+   "messages_in": 2,
+   "messages_out": 133
+  }
+ },
+ "by_inbox": [
+  {
+   "inbox_id": null,
+   "rooms_opened": 586,
+   "rooms_closed": 506,
+   "messages_in": 1993,
+   "messages_out": 1455,
+   "first_response_p50_s": 2258,
+   "resolution_p50_s": 5808
+  },
+  {
+   "inbox_id": "inb_01a15a8630e20000238dc761",
+   "rooms_opened": 2,
+   "rooms_closed": 0,
+   "messages_in": 3,
+   "messages_out": 2,
+   "first_response_p50_s": 180,
+   "resolution_p50_s": null
+  },
+  {
+   "inbox_id": "inb_01a15a8630e300002a854452",
+   "rooms_opened": 3,
+   "rooms_closed": 1,
+   "messages_in": 4,
+   "messages_out": 2,
+   "first_response_p50_s": 180,
+   "resolution_p50_s": 420
+  }
+ ],
+ "by_agent": [
+  {
+   "agent_key": "2646d2d2041ff1b0c4ebcbe6907353b4",
+   "rooms_handled": 204,
+   "avg_first_response_s": 34931,
+   "avg_resolution_s": 149664
+  },
+  {
+   "agent_key": "51a5bddb15c7f73385ccc00b93b99b04",
+   "rooms_handled": 191,
+   "avg_first_response_s": 16629,
+   "avg_resolution_s": 100785
+  },
+  {
+   "agent_key": "4905e1ac40c53123c87b35049a82b446",
+   "rooms_handled": 180,
+   "avg_first_response_s": 6514,
+   "avg_resolution_s": 80485
+  }
+ ]
+}

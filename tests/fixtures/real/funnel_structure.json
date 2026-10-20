@@ -1,0 +1,300 @@
+{
+ "data": [
+  {
+   "id": "fn_0mvh06sbv000OXg0zZlC",
+   "name": "Lead magnet",
+   "status": "live",
+   "steps": [
+    {
+     "step_id": "stp_0mvh06sbv001lAA3mY2B",
+     "name": "Landing page",
+     "order": 1,
+     "path": "/free-guide",
+     "blocks": {
+      "form": 1,
+      "checkout": 0,
+      "video": 0,
+      "countdown": 0
+     },
+     "word_count": 77,
+     "has_order_bump": false,
+     "has_upsell": false
+    },
+    {
+     "step_id": "stp_0mvh06sbv002K_DRhPuZ",
+     "name": "Thank you",
+     "order": 2,
+     "path": "/free-guide-thanks",
+     "blocks": {
+      "form": 0,
+      "checkout": 0,
+      "video": 0,
+      "countdown": 0
+     },
+     "word_count": 27,
+     "has_order_bump": false,
+     "has_upsell": false
+    }
+   ],
+   "has_order_bump": false,
+   "has_upsell": false,
+   "word_count": 104
+  },
+  {
+   "id": "fn_0mvh06sbz000434c5ias",
+   "name": "Sales page with order bump and upsell",
+   "status": "live",
+   "steps": [
+    {
+     "step_id": "stp_0mvh06sbz001UaLumi1a",
+     "name": "Sales page",
+     "order": 1,
+     "path": "/masterclass",
+     "blocks": {
+      "form": 0,
+      "checkout": 2,
+      "video": 1,
+      "countdown": 0
+     },
+     "word_count": 61,
+     "has_order_bump": true,
+     "has_upsell": false
+    },
+    {
+     "step_id": "stp_0mvh06sbz002G_h-fTzy",
+     "name": "One-click upsell",
+     "order": 2,
+     "path": "/masterclass-upsell",
+     "blocks": {
+      "form": 0,
+      "checkout": 1,
+      "video": 0,
+      "countdown": 0
+     },
+     "word_count": 29,
+     "has_order_bump": false,
+     "has_upsell": true
+    },
+    {
+     "step_id": "stp_0mvh06sbz003lRFBOhiR",
+     "name": "Thank you",
+     "order": 3,
+     "path": "/masterclass-thanks",
+     "blocks": {
+      "form": 0,
+      "checkout": 0,
+      "video": 0,
+      "countdown": 0
+     },
+     "word_count": 29,
+     "has_order_bump": false,
+     "has_upsell": false
+    }
+   ],
+   "has_order_bump": true,
+   "has_upsell": true,
+   "word_count": 119
+  },
+  {
+   "id": "fn_0mvh06shk000OPrppQOE",
+   "name": "Webinar registration",
+   "status": "live",
+   "steps": [
+    {
+     "step_id": "stp_0mvh06shk001hmbHQqjt",
+     "name": "Registration",
+     "order": 1,
+     "path": "/webinar",
+     "blocks": {
+      "form": 1,
+      "checkout": 0,
+      "video": 0,
+      "countdown": 1
+     },
+     "word_count": 64,
+     "has_order_bump": false,
+     "has_upsell": false
+    },
+    {
+     "step_id": "stp_0mvh06shk002iAfL7HxP",
+     "name": "Confirmation",
+     "order": 2,
+     "path": "/webinar-confirmed",
+     "blocks": {
+      "form": 0,
+      "checkout": 0,
+      "video": 0,
+      "countdown": 0
+     },
+     "word_count": 31,
+     "has_order_bump": false,
+     "has_upsell": false
+    }
+   ],
+   "has_order_bump": false,
+   "has_upsell": false,
+   "word_count": 95
+  },
+  {
+   "id": "fn_0mvh06shr000lqDLeey-",
+   "name": "A neighbourhood bakery selling sourdough funnel",
+   "status": "live",
+   "steps": [
+    {
+     "step_id": "stp_0mvh06shr001h5V0jw6s",
+     "name": "Booking page",
+     "order": 1,
+     "path": "/booking-page",
+     "blocks": {
+      "form": 1,
+      "checkout": 0,
+      "video": 0,
+      "countdown": 0
+     },
+     "word_count": 33,
+     "has_order_bump": false,
+     "has_upsell": false
+    },
+    {
+     "step_id": "stp_0mvh06shr002fjXrI8ck",
+     "name": "Thank-you page",
+     "order": 2,
+     "path": "/thank-you",
+     "blocks": {
+      "form": 0,
+      "checkout": 0,
+      "video": 0,
+      "countdown": 0
+     },
+     "word_count": 22,
+     "has_order_bump": false,
+     "has_upsell": false
+    }
+   ],
+   "has_order_bump": false,
+   "has_upsell": false,
+   "word_count": 55
+  },
+  {
+   "id": "fn_0mvh06uvc004YJqDfjxj",
+   "name": "Product launch",
+   "status": "live",
+   "steps": [
+    {
+     "step_id": "stp_0mvh06uvc005zsAeR8WJ",
+     "name": "Teaser",
+     "order": 1,
+     "path": "/launch",
+     "blocks": {
+      "form": 1,
+      "checkout": 0,
+      "video": 0,
+      "countdown": 1
+     },
+     "word_count": 14,
+     "has_order_bump": false,
+     "has_upsell": false
+    },
+    {
+     "step_id": "stp_0mvh06uvc006VljQUwy8",
+     "name": "Launch page",
+     "order": 2,
+     "path": "/launch-now",
+     "blocks": {
+      "form": 0,
+      "checkout": 1,
+      "video": 1,
+      "countdown": 0
+     },
+     "word_count": 35,
+     "has_order_bump": false,
+     "has_upsell": false
+    },
+    {
+     "step_id": "stp_0mvh06uvc007ChA98qYc",
+     "name": "Thank you",
+     "order": 3,
+     "path": "/launch-thanks",
+     "blocks": {
+      "form": 0,
+      "checkout": 0,
+      "video": 0,
+      "countdown": 0
+     },
+     "word_count": 11,
+     "has_order_bump": false,
+     "has_upsell": false
+    }
+   ],
+   "has_order_bump": false,
+   "has_upsell": false,
+   "word_count": 60
+  },
+  {
+   "id": "fn_0mvh06uvc00813uOy5ST",
+   "name": "Newsletter signup",
+   "status": "live",
+   "steps": [
+    {
+     "step_id": "stp_0mvh06uvc009IwPxkpSS",
+     "name": "Signup",
+     "order": 1,
+     "path": "/newsletter",
+     "blocks": {
+      "form": 1,
+      "checkout": 0,
+      "video": 0,
+      "countdown": 0
+     },
+     "word_count": 17,
+     "has_order_bump": false,
+     "has_upsell": false
+    }
+   ],
+   "has_order_bump": false,
+   "has_upsell": false,
+   "word_count": 17
+  },
+  {
+   "id": "fn_0mvh06uvc00aYwcGMFOD",
+   "name": "Book a call",
+   "status": "live",
+   "steps": [
+    {
+     "step_id": "stp_0mvh06uvc00bxU_gXw8L",
+     "name": "Booking page",
+     "order": 1,
+     "path": "/book",
+     "blocks": {
+      "form": 1,
+      "checkout": 0,
+      "video": 0,
+      "countdown": 0
+     },
+     "word_count": 33,
+     "has_order_bump": false,
+     "has_upsell": false
+    },
+    {
+     "step_id": "stp_0mvh06uvc00cN6EqlddB",
+     "name": "Confirmation",
+     "order": 2,
+     "path": "/book-confirmed",
+     "blocks": {
+      "form": 0,
+      "checkout": 0,
+      "video": 0,
+      "countdown": 0
+     },
+     "word_count": 13,
+     "has_order_bump": false,
+     "has_upsell": false
+    }
+   ],
+   "has_order_bump": false,
+   "has_upsell": false,
+   "word_count": 46
+  }
+ ],
+ "next_cursor": null
+}
