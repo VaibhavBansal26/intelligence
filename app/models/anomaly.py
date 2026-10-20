@@ -33,6 +33,12 @@ class DetectorConfig:
     min_abs_dev: float = 5.0
     count_like: bool = True
     z_floor: float = 3.5  # a point must also have |z| >= z_floor
+    # collapse rule (count-like series): a run of days far below the seasonal baseline is reported even when the series is
+    # so noisy that the z-based detectors cannot reach their thresholds. Found on real app traffic: a funnel that normally
+    # gets about 50 page views a day (daily CV ~25%) lost 70% of them for three days and neither ESD nor CUSUM fired.
+    collapse_ratio: float = 0.4
+    collapse_min_run: int = 3
+    collapse_min_baseline: float = 10.0
 
 
 @dataclass
@@ -178,10 +184,36 @@ def detect(values: NDArray[np.float64], cfg: DetectorConfig | None = None) -> De
                 ["cusum"],
             )
         )
+    if cfg.count_like and cfg.collapse_min_run > 0:
+        episodes.extend(_collapse_runs(x, base, z, cfg))
     for i in sorted(flagged):
         direction = "spike" if resid[i] > 0 else "drop"
         episodes.append(Episode(i, i, "point", direction, float(abs(z[i])), float(x[i]), float(base[i]), ["esd"]))
     return DetectionResult(_merge(episodes, x, base), "ok", n, float(scale))
+
+
+def _collapse_runs(
+    x: NDArray[np.float64], base: NDArray[np.float64], z: NDArray[np.float64], cfg: DetectorConfig
+) -> list[Episode]:
+    """Runs of at least `collapse_min_run` consecutive days at or below `collapse_ratio` x baseline (baseline big enough to matter).
+    With daily noise of 25-30% a single day under 40% of expected happens about once in 70 days, three in a row about once in 300,000."""
+    b = np.nan_to_num(base, nan=0.0)
+    low = (b >= cfg.collapse_min_baseline) & (x <= cfg.collapse_ratio * b)
+    out: list[Episode] = []
+    i, n = 0, len(x)
+    while i < n:
+        if not low[i]:
+            i += 1
+            continue
+        j = i
+        while j + 1 < n and low[j + 1]:
+            j += 1
+        if j - i + 1 >= cfg.collapse_min_run:
+            seg = slice(i, j + 1)
+            sev = float(np.nanmax(np.abs(z[seg]))) if not np.all(np.isnan(z[seg])) else 0.0
+            out.append(Episode(i, j, "shift", "drop", sev, float(np.nanmean(x[seg])), float(np.nanmean(base[seg])), ["collapse"]))
+        i = j + 1
+    return out
 
 
 def _merge(episodes: list[Episode], x: NDArray[np.float64], base: NDArray[np.float64]) -> list[Episode]:

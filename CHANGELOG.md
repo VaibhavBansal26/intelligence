@@ -5,6 +5,7 @@ All notable changes are recorded here ([Keep a Changelog](https://keepachangelog
 ## [Unreleased]
 ### Added
 - Connector: reads `RateLimit` / `RateLimit-Policy` and waits one refill interval when a bucket is empty instead of provoking a 429; exports request 5,000 rows (`CONNECTOR_EXPORT_PAGE_LIMIT`) and fall back to 1,000 on a 400; `CONNECTOR_MAX_RETRY_AFTER_S` caps how long a `Retry-After` is slept (default 120 s).
+- Anomaly detector: collapse rule (3 consecutive days at or below 40% of the seasonal baseline) for noisy count series.
 - Out-of-core path: hash-bucketed Parquet event store, incremental per-bucket contact-profile refresh, `profiles` fan-out jobs, standalone worker (`python -m app.worker`).
 - `POST /v1/leads/score/batch`, model LRU cache with live hot swap on promote/rollback, per-data-version feature-frame cache.
 - Per-account budgets: concurrent jobs with fair scheduling, `ACCOUNT_MAX_EVENT_ROWS`, `ML_MAX_TRAINING_ROWS`.
@@ -14,6 +15,7 @@ All notable changes are recorded here ([Keep a Changelog](https://keepachangelog
 - Training and `/v1/leads/scores`, `/v1/segments`, `/v1/insights` crashed on real data: rooms the apps' AI triage did not label have a null `ai_intent` (pandas `<NA>` in an integer cast).
 - `/v1/rankings/conversations/open` answered 500 when a feature was NaN (not valid JSON); NaN and infinities are now `null` in every `/v1` JSON response.
 - A revoked, expired or out-of-scope key on one source failed the whole sync job and starved the account's other sources; it is now reported per resource and the other sources sync.
+- Funnel ranking listed thank-you pages first (0% "pass rate" of a page with nothing to convert); the last step now counts orders plus opt-ins, confirmation pages (no form, no checkout, no conversion) are left out and the page before one becomes the funnel's final step.
 - `GET /v1/sync/status` reported 0 rows for the `funnels` and `funnel_structure` snapshots.
 
 ## [0.1.0] - 2026-10-19

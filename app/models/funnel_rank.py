@@ -1,7 +1,9 @@
 """Funnel and step ranking by expected revenue uplift if the weakest steps reached the benchmark median.
 
 Each step has a pass rate (share of its unique visitors that reach the next step; for the final step, that
-place an order). Raw rates of low-traffic steps are noise, so rates are shrunk with an empirical-Bayes Beta
+place an order or opt in). A final page without any conversion element and without a single conversion (a
+thank-you / confirmation page) has nothing to improve and is left out: on the real Funnels app these pages
+otherwise showed a 0% pass rate and topped the ranking. Raw rates of low-traffic steps are noise, so rates are shrunk with an empirical-Bayes Beta
 prior fitted per step role (entry / middle / final), optionally centred on a content-aware ridge prediction.
 Uncertainty comes from Beta-posterior bootstrap draws.
 """
@@ -34,19 +36,34 @@ def _rng_for(seed: int, *parts: str) -> np.random.Generator:
     return np.random.default_rng([seed, int.from_bytes(h[:4], "big")])
 
 
-def step_frame(steps: pd.DataFrame, funnels: pd.DataFrame) -> pd.DataFrame:
+def step_frame(steps: pd.DataFrame, funnels: pd.DataFrame, structure: pd.DataFrame | None = None) -> pd.DataFrame:
     """Turn funnel_steps rows into trials/successes per step (`steps` has source_id, funnel_id, ord, ...)."""
     rows: list[dict[str, Any]] = []
+    interactive: dict[tuple[str, str, str], int] = {}
+    if structure is not None and not structure.empty:
+        interactive = {
+            (str(r.source_id), str(r.funnel_id), str(r.step_id)): int(r.n_form) + int(r.n_checkout)
+            for r in structure.itertuples()
+        }
     fgross = {(r.source_id, r.funnel_id): float(r.gross) for r in funnels.itertuples()} if not funnels.empty else {}
     for (src, fid), g in steps.sort_values("ord").groupby(["source_id", "funnel_id"]):
         g = g.reset_index(drop=True)
         last = len(g) - 1
+
+        def is_confirmation(j: int, g: pd.DataFrame = g, src: Any = src, fid: Any = fid, last: int = last) -> bool:
+            """Last page, no form or checkout block, no order or opt-in: a thank-you / confirmation page."""
+            r = g.loc[j]
+            outcome = float(r["orders"]) + float(r.get("optins", 0) or 0)
+            return j == last and last > 0 and outcome <= 0 and interactive.get((str(src), str(fid), str(r["step_id"])), 0) == 0
+
+        eff_last = last - 1 if is_confirmation(last) else last  # the page before a confirmation page is the funnel's final step
         for i, r in g.iterrows():
             i = int(i)
             trials = float(r["unique_visits"])
-            if trials <= 0:
-                continue
-            passers = float(g.loc[i + 1, "unique_visits"]) if i < last else float(r["orders"])
+            if trials <= 0 or is_confirmation(i):
+                continue  # nothing to improve on a confirmation page
+            outcome = float(r["orders"]) + float(r.get("optins", 0) or 0)
+            passers = float(g.loc[i + 1, "unique_visits"]) if i < last else outcome
             passers = min(passers, trials)
             downstream = float(g.loc[i + 1 :, "gross"].sum()) if i < last else float(r["gross"])
             if downstream <= 0:
@@ -58,7 +75,7 @@ def step_frame(steps: pd.DataFrame, funnels: pd.DataFrame) -> pd.DataFrame:
                     "step_id": r["step_id"],
                     "step_name": r["name"],
                     "ord": int(r["ord"]),
-                    "role": _role(i, last),
+                    "role": _role(i, eff_last),
                     "n": trials,
                     "passers": passers,
                     "downstream_gross": downstream,
@@ -116,7 +133,7 @@ def rank_steps(
 ) -> dict[str, Any]:
     """Return {"steps": [...ranked...], "funnels": [...ranked...], "notes": [...], "method": ...}."""
     structure = structure if structure is not None else pd.DataFrame()
-    sf: pd.DataFrame = step_frame(steps, funnels) if not steps.empty else pd.DataFrame()
+    sf: pd.DataFrame = step_frame(steps, funnels, structure) if not steps.empty else pd.DataFrame()
     if sf.empty:
         return {"steps": [], "funnels": [], "method": "none", "notes": ["no funnel step data synced yet"], "priors": {}}
     notes: list[str] = []

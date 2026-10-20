@@ -88,3 +88,76 @@ def test_fingerprint_is_stable_for_the_same_episode() -> None:
     x2 = x.copy()
     b = detect(x2).episodes[0].fingerprint("visits", "all", t)
     assert a == b
+
+
+# Real daily page views of one funnel from the integration run (45 days, dates dropped; the last three are a 70% traffic
+# collapse). Daily noise is about 27%, far above the Poisson noise of the synthetic world, so ESD and CUSUM stay silent.
+REAL_NOISY_FUNNEL = [
+    28,
+    36,
+    50,
+    40,
+    48,
+    49,
+    40,
+    36,
+    26,
+    44,
+    28,
+    60,
+    43,
+    60,
+    15,
+    51,
+    60,
+    57,
+    40,
+    76,
+    48,
+    53,
+    40,
+    47,
+    61,
+    56,
+    55,
+    44,
+    44,
+    48,
+    70,
+    55,
+    80,
+    74,
+    27,
+    60,
+    63,
+    53,
+    63,
+    72,
+    36,
+    68,
+    16,
+    15,
+    15,
+]
+
+
+def test_three_day_collapse_in_noisy_real_traffic_is_reported() -> None:
+    res = detect(np.array(REAL_NOISY_FUNNEL, float))
+    assert res.status == "ok"
+    drops = [e for e in res.episodes if e.direction == "drop"]
+    assert len(drops) == 1 and drops[0].detectors == ["collapse"]
+    assert (drops[0].start_idx, drops[0].end_idx) == (42, 44)
+    assert drops[0].observed < 0.4 * drops[0].expected
+
+
+def test_the_same_noisy_series_without_the_collapse_raises_nothing() -> None:
+    assert detect(np.array(REAL_NOISY_FUNNEL[:42], float)).episodes == []
+
+
+def test_one_or_two_low_days_and_small_baselines_do_not_trigger_the_collapse_rule() -> None:
+    x = np.array(REAL_NOISY_FUNNEL, float)
+    x[-1] = 50
+    assert detect(x).episodes == []  # only two low days
+    tiny = np.array([4, 5, 3, 6, 4, 5, 4] * 6, float)
+    tiny[-3:] = 0
+    assert [e for e in detect(tiny).episodes if "collapse" in e.detectors] == []  # baseline below collapse_min_baseline
