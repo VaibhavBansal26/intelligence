@@ -15,6 +15,7 @@ import argparse
 import hashlib
 import hmac
 import json
+import os
 import sqlite3
 import sys
 import time
@@ -206,15 +207,24 @@ def provision(fun: App, conv: App, rep: Report) -> dict[str, Any]:
     out["f_expiring"] = fkey("expiring", both, fh, expiresAt=soon)["key"]
     out["c_expiring"] = ckey("expiring", both, ch, expires_at=soon)["key"]
     out["expiry_set_at"] = time.time()
-    # identity peppers: session-authenticated endpoints (API keys can not read them)
+    # identity peppers: one documented path in both apps, `GET|PUT /api/v1/analytics/identity-pepper`
+    # (session with analytics_identity:manage + analytics:export); {pepper, version, algorithm, fingerprint, rotatedAt}
     r = fun.http.get(f"{fun.base}/api/v1/analytics/identity-pepper", headers=fh)
+    r.raise_for_status()
+    out["f_pepper_resp"] = r.json()
     out["f_pepper"] = r.json()["pepper"]
-    r = conv.http.get(f"{conv.base}/api/analytics/identity-pepper", headers=ch)
+    r = conv.http.get(f"{conv.base}/api/v1/analytics/identity-pepper", headers=ch)
+    r.raise_for_status()
+    out["c_pepper_resp"] = r.json()
     out["c_pepper"] = r.json()["pepper"]
-    pep_errs = validation_errors(
-        schema_validator(REPOS / "conversations" / "docs" / "analytics-api" / "identity-pepper.schema.json"), r.json()
-    )
-    rep.check("conversations: identity-pepper response satisfies its published schema", not pep_errs, "; ".join(pep_errs))
+    for app_name, root, resp in (
+        ("funnels", "funnels", out["f_pepper_resp"]),
+        ("conversations", "conversations", out["c_pepper_resp"]),
+    ):
+        pep_errs = validation_errors(
+            schema_validator(REPOS / root / "docs" / "analytics-api" / "identity-pepper.schema.json"), resp
+        )
+        rep.check(f"{app_name}: identity-pepper response satisfies its published schema", not pep_errs, "; ".join(pep_errs))
     rep.check("both apps issued API keys and an identity pepper", all(out[k] for k in ("f_key", "c_key", "f_pepper", "c_pepper")))
 
     # a second workspace in each app: other tenant (wrong-workspace key) and an EMPTY workspace
@@ -239,13 +249,12 @@ def provision(fun: App, conv: App, rep: Report) -> dict[str, Any]:
     out["c_other"] = ckey("other", both, ch2)["key"]
     out["f_other_pepper"] = fun.http.get(f"{fun.base}/api/v1/analytics/identity-pepper", headers=fh2).json()["pepper"]
     out["c_other_pepper"] = conv.http.get(f"{conv.base}/api/analytics/identity-pepper", headers=ch2).json()["pepper"]
-    # a Conversations key that may read the pepper over the API
-    r = conv.http.post(
-        f"{conv.base}/api/v1/api-keys",
-        headers=ch,
-        json={"name": "identity", "scopes": ["analytics:export", "analytics_identity:manage"]},
-    )
-    out["c_identity_key"] = r.json().get("key") if r.status_code < 300 else None
+    # integration keys that may READ the pepper over the API (scopes analytics:export + analytics_identity:manage)
+    ident = ["analytics:export", "analytics_identity:manage"]
+    out["c_identity_key"] = ckey("identity", ident, ch)["key"]
+    out["f_identity_key"] = fkey("identity", ident, fh)["key"]
+    # keys for the shared-pepper scenario (created now, used after the peppers are aligned at the end of the run)
+    out["f_shared"], out["c_shared"] = fkey("shared", both, fh)["key"], ckey("shared", both, ch)["key"]
     rep.fact("peppers_differ_between_apps", out["f_pepper"] != out["c_pepper"])
     return out
 
@@ -593,35 +602,40 @@ def auth_and_limits(fun: App, conv: App, keys: dict[str, Any], rep: Report, reco
         r.status_code == 200,
         f"HTTP {r.status_code}",
     )
-    # pepper endpoint access
-    r = fun.http.get(f"{fun.base}/api/v1/analytics/identity-pepper", headers={"authorization": f"Bearer {keys['f_key']}"})
-    rep.check("funnels: an API key can NOT read the identity pepper", r.status_code in (401, 403), f"HTTP {r.status_code}")
-    if keys.get("c_identity_key"):
-        r = conv.http.get(
-            f"{conv.base}/api/v1/analytics/identity-pepper", headers={"authorization": f"Bearer {keys['c_identity_key']}"}
-        )
-        rep.fact("conversations_pepper_via_api_key", f"HTTP {r.status_code}")
+    # pepper endpoint access: read with the right scopes, never change with a key
+    pepper_url = {
+        "funnels": f"{fun.base}/api/v1/analytics/identity-pepper",
+        "conversations": f"{conv.base}/api/v1/analytics/identity-pepper",
+    }
+    for app_name, app, ident_key, plain_key, pepper in (
+        ("funnels", fun, keys["f_identity_key"], keys["f_key"], keys["f_pepper"]),
+        ("conversations", conv, keys["c_identity_key"], keys["c_key"], keys["c_pepper"]),
+    ):
+        url = pepper_url[app_name]
+        schema = schema_validator(REPOS / app_name / "docs" / "analytics-api" / "identity-pepper.schema.json")
+        r = app.http.get(url, headers={"authorization": f"Bearer {ident_key}"})
         rep.check(
-            "conversations: API key with analytics_identity:manage reads the same pepper as the session endpoint",
-            r.status_code == 200 and r.json().get("pepper") == keys["c_pepper"],
-            f"HTTP {r.status_code} {r.text[:100]}",
+            f"{app_name}: API key with analytics:export + analytics_identity:manage reads the same pepper as the session",
+            r.status_code == 200 and r.json().get("pepper") == pepper,
+            f"HTTP {r.status_code} {r.text[:80]}",
         )
         rep.check(
-            "conversations: the API-key pepper response satisfies its published schema",
-            r.status_code == 200 and not validation_errors(schema_validator(cs / "identity-pepper.schema.json"), r.json()),
-            r.text[:100],
+            f"{app_name}: the API-key pepper response satisfies its published schema",
+            r.status_code == 200 and not validation_errors(schema, r.json()),
+            r.text[:80],
         )
-    rep.deviation(
-        "funnels+conversations",
-        "identity-pepper",
-        "the pepper is generated per workspace and neither app can SET it, only rotate it to a new random value; two apps therefore never share a pepper, so the contract's join (same pepper -> same contact_key) is impossible without a Node-side change",
-        "Funnels: services/analyticsapi.ts identityPepper/rotatePepper (randomBytes(32)); Conversations: services/analytics.ts getPepper/rotatePepper. Needs an import/set endpoint.",
-    )
-    rep.deviation(
-        "conversations",
-        "GET /api/analytics/identity-pepper",
-        "the contract names GET /api/v1/analytics/identity-pepper for the pepper; Conversations serves the session-authenticated one at /api/analytics/identity-pepper and the /api/v1 path needs an API key with analytics_identity:manage (a scope Funnels does not have); response shapes differ ({pepper,rotatedAt} vs {pepper,version,algorithm})",
-    )
+        r = app.http.get(url, headers={"authorization": f"Bearer {plain_key}"})
+        rep.check(
+            f"{app_name}: an API key without analytics_identity:manage can NOT read the pepper",
+            r.status_code in (401, 403),
+            f"HTTP {r.status_code}",
+        )
+        r = app.http.put(url, headers={"authorization": f"Bearer {ident_key}"}, json={"pepper": os.urandom(32).hex()})
+        rep.check(
+            f"{app_name}: an API key can NOT set the pepper (session only)",
+            r.status_code in (401, 403),
+            f"HTTP {r.status_code} {r.text[:80]}",
+        )
 
     section("rate limits: exports 10 per minute per key, 429 + Retry-After")
     for app, key, path in ((fun, keys["f_other"], "/export/events"), (conv, keys["c_other"], "/export/rooms")):
@@ -974,7 +988,9 @@ def intelligence_flow(
         "join_with_REAL_distinct_peppers",
         {k: j[k] for k in ("funnel_contacts", "conversation_contacts", "joined_contacts", "warnings")},
     )
-    pepper_scenario(fun, conv, intel, keys, people, rep, known_overlap)
+    bridge = pepper_scenario(fun, conv, intel, keys, people, rep, known_overlap)
+    keys["bridge_join"] = bridge
+    keys["known_overlap"] = known_overlap
     one = next(p for p in people if p["funnels"])
     r = intel.post(h, "/v1/leads/score", {"email": one["email"]})
     rep.check(
@@ -1137,7 +1153,7 @@ def rate_limited_sync(fun: App, conv: App, intel: Intel, keys: dict[str, Any], t
 
 def pepper_scenario(
     fun: App, conv: App, intel: Intel, keys: dict[str, Any], people: list[dict[str, Any]], rep: Report, known_overlap: int
-) -> None:
+) -> dict[str, Any] | None:
     """The identity bridge: join contacts across apps whose peppers differ (which is what the real apps produce)."""
     h = intel.account("Bridge Co")
     for kind, app, key, pepper in (
@@ -1162,7 +1178,7 @@ def pepper_scenario(
         f"HTTP {r.status_code} {r.text[:200]}",
     )
     if r.status_code != 200:
-        return
+        return None
     j1 = intel.get(h, "/v1/join").json()
     rep.fact(
         "join_after_bridge",
@@ -1176,6 +1192,137 @@ def pepper_scenario(
         j1["joined_contacts"] >= 0.95 * known_overlap,
         f"{j1['joined_contacts']} vs ground truth {known_overlap}",
     )
+    return j1
+
+
+def fingerprint(pepper: str) -> str:
+    return hashlib.sha256(pepper.encode()).hexdigest()[:8]
+
+
+def shared_pepper_scenario(
+    fun: App, conv: App, intel: Intel, keys: dict[str, Any], people: list[dict[str, Any]], rep: Report, known_overlap: int
+) -> None:
+    """Both apps get the SAME importable pepper (PUT /api/v1/analytics/identity-pepper); the join then works without a bridge."""
+    section("shared identity pepper: PUT the same random value into both apps, then join without a bridge")
+    f_url = f"{fun.base}/api/v1/analytics/identity-pepper"
+    c_url = f"{conv.base}/api/v1/analytics/identity-pepper"
+    fh, ch = fun.login(), conv.login()  # fresh sessions
+    shared = os.urandom(32).hex()
+    before = {"f": keys["f_pepper_resp"], "c": keys["c_pepper_resp"]}
+    rep.check(
+        "before the import the two apps have different pepper fingerprints",
+        before["f"]["fingerprint"] != before["c"]["fingerprint"],
+        f"{before['f']['fingerprint']} vs {before['c']['fingerprint']}",
+    )
+    # input validation (nothing is stored on a refusal)
+    for app_name, app, url, h in (("funnels", fun, f_url, fh), ("conversations", conv, c_url, ch)):
+        for label, body, codes in (
+            ("too short", {"pepper": "abc123"}, ("INVALID_PEPPER",)),
+            ("a repeated character", {"pepper": "a" * 40}, ("INVALID_PEPPER",)),
+            ("hex shorter than 64 characters", {"pepper": os.urandom(24).hex()}, ("INVALID_PEPPER",)),
+            ("non-ASCII", {"pepper": "é" * 40}, ("INVALID_PEPPER", "VALIDATION_ERROR")),
+            ("confirm mismatch", {"pepper": shared, "confirm": os.urandom(32).hex()}, ("PEPPER_CONFIRM_MISMATCH",)),
+        ):
+            r = app.http.put(url, headers=h, json=body)
+            code = (
+                (r.json().get("error") or {}).get("code")
+                if r.headers.get("content-type", "").startswith("application/json")
+                else None
+            )
+            rep.check(
+                f"{app_name}: PUT pepper refuses {label}",
+                r.status_code == 400 and code in codes,
+                f"HTTP {r.status_code} {r.text[:120]}",
+            )
+        r = app.http.get(url, headers=h)
+        rep.check(
+            f"{app_name}: refused imports changed nothing",
+            r.json()["pepper"] == (keys["f_pepper"] if app is fun else keys["c_pepper"]),
+        )
+    # the import itself
+    rf = fun.http.put(f_url, headers=fh, json={"pepper": shared, "confirm": shared})
+    rc = conv.http.put(c_url, headers=ch, json={"pepper": shared, "confirm": shared})
+    rep.check("funnels: PUT pepper accepted", rf.status_code == 200, f"HTTP {rf.status_code} {rf.text[:160]}")
+    rep.check("conversations: PUT pepper accepted", rc.status_code == 200, f"HTTP {rc.status_code} {rc.text[:160]}")
+    if rf.status_code != 200 or rc.status_code != 200:
+        return
+    gf, gc = fun.http.get(f_url, headers=fh).json(), conv.http.get(c_url, headers=ch).json()
+    rep.check("both apps return the imported pepper", gf["pepper"] == shared and gc["pepper"] == shared)
+    rep.check(
+        "fingerprints are equal across the apps and equal SHA-256(pepper)[:8]",
+        gf["fingerprint"] == gc["fingerprint"] == fingerprint(shared),
+        f"{gf['fingerprint']} {gc['fingerprint']} {fingerprint(shared)}",
+    )
+    rep.check(
+        "the import bumped version, set rotatedAt and the algorithm is HMAC-SHA256",
+        gf["version"] > before["f"]["version"]
+        and gc["version"] > before["c"]["version"]
+        and gf["rotatedAt"]
+        and gc["rotatedAt"]
+        and gf["algorithm"] == gc["algorithm"] == "HMAC-SHA256",
+        f"{gf} {gc}",
+    )
+    again = fun.http.put(f_url, headers=fh, json={"pepper": shared}).json()
+    rep.check("funnels: importing the stored value again changes nothing", again["version"] == gf["version"], str(again))
+    again = conv.http.put(c_url, headers=ch, json={"pepper": shared}).json()
+    rep.check("conversations: importing the stored value again changes nothing", again["version"] == gc["version"], str(again))
+    # exports now use the shared pepper in both apps (explicit window: the default is the last 30 days only)
+    win = {"from": backfill_from()}
+    app_emails_f = lead_emails(fun, fh)
+    app_emails_c = contact_emails(conv, ch)
+    f_ground = {key_hash(shared, e) for e in app_emails_f}
+    c_ground = {key_hash(shared, e) for e in app_emails_c}
+    ex_f = {r["contact_key"] for r in fun.export_all(keys["f_shared"], "/export/leads", 5000, win)[0]}
+    ex_c = {r["contact_key"] for r in conv.export_all(keys["c_shared"], "/export/rooms", 5000, win)[0] if r["contact_key"]}
+    rep.check(
+        "exports of both apps now carry contact_key = HMAC(shared pepper, email)",
+        bool(ex_f) and bool(ex_c) and ex_f <= f_ground and ex_c <= c_ground,
+        f"{len(ex_f - f_ground)} / {len(ex_c - c_ground)} unexplained",
+    )
+    rep.check(
+        "the same person has the same contact_key in both apps",
+        len(ex_f & ex_c) >= 0.95 * known_overlap,
+        f"{len(ex_f & ex_c)} shared keys vs ground truth {known_overlap}",
+    )
+    # Intelligence: both sources registered with the SAME pepper, no bridge
+    h = intel.account("Shared Pepper Co")
+    for kind, app, key in (("funnels", fun, keys["f_shared"]), ("conversations", conv, keys["c_shared"])):
+        intel.post(
+            h, "/v1/sources", {"kind": kind, "name": kind, "base_url": app.base, "api_key": key, "identity_pepper": shared}
+        )
+    intel.post(h, "/v1/sync", {}, wait="true")
+    j = intel.get(h, "/v1/join").json()
+    smaller = min(j["funnel_contacts"], j["conversation_contacts"]) or 1
+    coverage = 100.0 * j["joined_contacts"] / smaller
+    bridge = keys.get("bridge_join") or {}
+    rep.fact(
+        "join_with_SHARED_pepper",
+        {
+            **{
+                k: j[k]
+                for k in ("funnel_contacts", "conversation_contacts", "joined_contacts", "coverage_of_smaller_side", "warnings")
+            },
+            "coverage_pct_of_smaller_side": round(coverage, 1),
+            "ground_truth_people_in_both": known_overlap,
+            "identity_bridge_joined_contacts": bridge.get("joined_contacts"),
+        },
+    )
+    rep.check(
+        "with the same pepper in both apps the join finds the shared people (no bridge)",
+        j["joined_contacts"] >= 0.95 * known_overlap and not any("identity_bridge_active" in w for w in j["warnings"]),
+        f"{j['joined_contacts']} joined vs ground truth {known_overlap}; warnings: {j['warnings']}",
+    )
+    rep.check(
+        "no pepper-mismatch warning with the shared pepper",
+        not any("pepper" in w for w in j["warnings"]),
+        "; ".join(j["warnings"]),
+    )
+    if bridge:
+        rep.check(
+            "the shared-pepper join equals the identity-bridge result (+-2%)",
+            abs(j["joined_contacts"] - bridge["joined_contacts"]) <= max(2, 0.02 * known_overlap),
+            f"shared {j['joined_contacts']} vs bridge {bridge['joined_contacts']}",
+        )
 
 
 # ----------------------------------------------------------------------------------------------------------------
@@ -1238,7 +1385,8 @@ def main() -> int:
     keys = stages[0]()
     truth = contract_probe(fun, conv, keys, R, record)
     intelligence_flow(fun, conv, intel, keys, truth, people, workdir, R, traffic.get("incident"))
-    auth_and_limits(fun, conv, keys, R, record)  # last: it spends the rate-limit budget of the 'other' keys only
+    auth_and_limits(fun, conv, keys, R, record)  # it spends the rate-limit budget of the 'other' keys only
+    shared_pepper_scenario(fun, conv, intel, keys, people, R, keys.get("known_overlap", 0))  # last: it changes the peppers
     if record is not None:
         write_fixtures(record)
     failed = [c for c in R.checks if not c["ok"]]
