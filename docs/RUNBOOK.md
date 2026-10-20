@@ -48,6 +48,8 @@ Suggested SLOs (targets, not measurements): 99.5% of `/v1` GETs under 2 s exclud
 
 **Pepper mismatch / low join coverage.** `GET /v1/join` returns `warnings` (`pepper_fingerprint_mismatch`, `pepper_mismatch_suspected`) and coverage. Copy the identity pepper from the Funnels workspace (`/identity-pepper`) into both sources (`PATCH /v1/sources/{id}` with `identity_pepper`). The apps must use the same pepper; the service only compares fingerprints and cannot change contact keys already stored in the sources.
 
+**Source rate limits (429).** The apps allow 10 export requests and 60 other requests per minute per key. The connector asks for large export pages (`CONNECTOR_EXPORT_PAGE_LIMIT`, default 5,000), reads the `RateLimit` headers and waits one refill interval when a bucket is empty instead of provoking a 429, and honours `Retry-After` up to `CONNECTOR_MAX_RETRY_AFTER_S` (120 s). A longer penalty (the apps escalate after repeated violations) fails that resource with its cursor kept (`resumable_cursor: true`); the next sync resumes. A first backfill of 13,000 events took 3 export pages; a sync with a pre-exhausted key waited about 38 s and landed everything instead of failing.
+
 **Model drift.** `GET /v1/models/types/lead_conversion/drift?recent_days=14` lists per-feature PSI. `warn` at 0.1, `alert` at 0.25. Retrain (`POST /v1/models/train`); the new version is auto-promoted unless its validation AUC is more than 0.02 below the active one. If a retrain makes things worse, roll back.
 
 **Cold start / "heuristic" responses.** Not an incident: the account has too little labelled data. The response field `method` is `heuristic` and `cold_start_reason` says what is missing. See the volume table in [APPROACH.md](APPROACH.md).

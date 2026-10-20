@@ -183,3 +183,94 @@ async def test_get_records_accepts_ndjson_and_json() -> None:
     respx.get(url).mock(return_value=httpx.Response(200, json={"data": [{"funnel_id": "a"}]}))
     async with httpx.AsyncClient() as http:
         assert len(await make(http).get_records("/export/funnel-structure")) == 1
+
+
+# --- rate-limit pacing and export page size (found by running against the real apps) -----------------------------
+def test_parse_rate_limit_reads_ietf_and_legacy_headers() -> None:
+    from app.connectors.client import parse_rate_limit
+
+    ietf = httpx.Headers({"RateLimit": '"analytics.export";r=8;t=12', "RateLimit-Policy": '"analytics.export";q=10;w=60'})
+    assert parse_rate_limit(ietf) == (8, 6.0)
+    assert parse_rate_limit(httpx.Headers({"X-RateLimit-Remaining": "3"})) == (3, None)
+    assert parse_rate_limit(httpx.Headers({})) == (None, None)
+
+
+@respx.mock
+async def test_zero_remaining_paces_the_next_export_request_instead_of_provoking_a_429() -> None:
+    hdr = {"RateLimit": '"analytics.export";r=0;t=55', "RateLimit-Policy": '"analytics.export";q=10;w=60'}
+    route = respx.get(EXP).mock(
+        side_effect=[
+            httpx.Response(200, text=nd([{"id": "1"}]), headers={**hdr, "X-Next-Cursor": "c1"}),
+            httpx.Response(200, text=nd([{"id": "2"}])),
+        ]
+    )
+    sleeps: list[float] = []
+    async with httpx.AsyncClient() as http:
+        rows = await collect(make(http, sleeps))
+    assert [r["id"] for r in rows] == ["1", "2"] and route.call_count == 2
+    assert sleeps == [6.25]  # one refill interval of the policy (60 s / 10), not the 55 s until a full reset
+
+
+@respx.mock
+async def test_reads_and_exports_are_paced_independently() -> None:
+    respx.get(BASE + "/api/v1/analytics/funnels").mock(
+        return_value=httpx.Response(
+            200,
+            json={"data": []},
+            headers={"RateLimit": '"analytics.read";r=0;t=1', "RateLimit-Policy": '"analytics.read";q=60;w=60'},
+        )
+    )
+    respx.get(EXP).mock(return_value=httpx.Response(200, text=nd([{"id": "1"}])))
+    sleeps: list[float] = []
+    async with httpx.AsyncClient() as http:
+        c = make(http, sleeps)
+        await c.get_json("/funnels")
+        await collect(c)  # export bucket untouched by the read bucket
+    assert sleeps == []
+
+
+@respx.mock
+async def test_429_wait_clears_pacing_so_the_retry_is_not_delayed_twice() -> None:
+    respx.get(EXP).mock(
+        side_effect=[
+            httpx.Response(
+                429,
+                headers={
+                    "Retry-After": "7",
+                    "RateLimit": '"analytics.export";r=0;t=7',
+                    "RateLimit-Policy": '"analytics.export";q=10;w=60',
+                },
+            ),
+            httpx.Response(200, text=nd([{"id": "1"}])),
+        ]
+    )
+    sleeps: list[float] = []
+    async with httpx.AsyncClient() as http:
+        await collect(make(http, sleeps))
+    assert sleeps == [7.0]
+
+
+@respx.mock
+async def test_exports_ask_for_large_pages_and_fall_back_to_the_contract_limit_on_400() -> None:
+    route = respx.get(EXP).mock(
+        side_effect=[
+            httpx.Response(400, json={"error": {"code": "VALIDATION_ERROR", "message": "limit must be <= 1000"}}),
+            httpx.Response(200, text=nd([{"id": "1"}]), headers={"X-Next-Cursor": "c1"}),
+            httpx.Response(200, text=nd([{"id": "2"}])),
+        ]
+    )
+    async with httpx.AsyncClient() as http:
+        rows = await collect(make(http, [], export_page_limit=5000))
+    assert [r["id"] for r in rows] == ["1", "2"]
+    assert [c.request.url.params["limit"] for c in route.calls] == ["5000", "1000", "1000"]
+
+
+@respx.mock
+async def test_400_at_the_contract_limit_is_a_hard_error() -> None:
+    from app.connectors.client import ConnectorBadRequest
+
+    respx.get(EXP).mock(return_value=httpx.Response(400, json={"error": {"code": "VALIDATION_ERROR", "message": "bad from"}}))
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(ConnectorBadRequest) as e:
+            await collect(make(http, [], export_page_limit=1000))
+    assert e.value.code == "VALIDATION_ERROR"

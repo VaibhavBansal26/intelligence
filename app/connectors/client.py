@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import random
+import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
@@ -31,6 +32,14 @@ class ConnectorNotFound(ConnectorError):
     pass
 
 
+class ConnectorBadRequest(ConnectorError):
+    """400/422: the source rejected the request (for exports most often an over-large `limit`)."""
+
+    def __init__(self, message: str, code: str | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+
+
 class ConnectorSchemaError(ConnectorError):
     """The remote payload does not look like the contract."""
 
@@ -46,9 +55,10 @@ class ConnectorUnavailable(ConnectorError):
 class ConnectorRateLimited(ConnectorError):
     retryable = True
 
-    def __init__(self, message: str, retry_after_s: float) -> None:
+    def __init__(self, message: str, retry_after_s: float, group: str = "read") -> None:
         super().__init__(message)
         self.retry_after_s = retry_after_s
+        self.group = group
 
 
 @dataclass
@@ -72,6 +82,26 @@ def _retry_after(value: str | None, now: float) -> float | None:
             return max(0.0, parsedate_to_datetime(value).timestamp() - now)
         except (TypeError, ValueError):
             return None
+
+
+_RL_REMAINING = re.compile(r";\s*r=(\d+)")
+_RL_POLICY = re.compile(r";\s*q=(\d+)\s*;\s*w=(\d+)")
+
+
+def parse_rate_limit(headers: httpx.Headers) -> tuple[int | None, float | None]:
+    """(remaining requests, seconds per request at the policy rate) from the IETF `RateLimit` / `RateLimit-Policy`
+    headers, falling back to the legacy `X-RateLimit-Remaining`. Either part may be None."""
+    remaining: int | None = None
+    if m_ := _RL_REMAINING.search(headers.get("RateLimit", "")):
+        remaining = int(m_.group(1))
+    elif (legacy := headers.get("X-RateLimit-Remaining", "")).isdigit():
+        remaining = int(legacy)
+    interval: float | None = None
+    if p_ := _RL_POLICY.search(headers.get("RateLimit-Policy", "")):
+        q, w = int(p_.group(1)), int(p_.group(2))
+        if q > 0:
+            interval = w / q
+    return remaining, interval
 
 
 def unwrap_list(payload: Any) -> tuple[list[Any], str | None]:
@@ -100,6 +130,7 @@ class SourceClient:
         max_retry_after_s: float = 60.0,
         max_bad_line_ratio: float = 0.05,
         page_limit: int = 1000,
+        export_page_limit: int = 5000,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         rand: Callable[[], float] = random.random,
         now: Callable[[], float] | None = None,
@@ -113,7 +144,9 @@ class SourceClient:
         self._max_s = backoff_max_s
         self._max_retry_after = max_retry_after_s
         self._max_bad_ratio = max_bad_line_ratio
-        self._page_limit = min(page_limit, 1000)
+        self._page_limit = min(page_limit, 1000)  # contract: lists take limit <= 1000
+        self._export_limit = max(1, export_page_limit)  # exports are rate limited per request, so pages are larger
+        self._paced: dict[str, tuple[int | None, float | None]] = {}
         self._sleep = sleep
         self._rand = rand
         import time
@@ -129,18 +162,49 @@ class SourceClient:
             raise ConnectorAuthError(f"source rejected credentials (HTTP {code})")
         if code == 404:
             raise ConnectorNotFound("source resource not found")
+        if code in (400, 422):
+            raise ConnectorBadRequest(f"source rejected the request (HTTP {code})", code=self._error_code(resp))
         if code == 429:
             ra = _retry_after(resp.headers.get("Retry-After"), self._now()) or 1.0
-            raise ConnectorRateLimited("source rate limited us", ra)
+            raise ConnectorRateLimited("source rate limited us", ra, self._group(str(resp.request.url.path)))
         if code in RETRY_STATUS:
             raise ConnectorUnavailable(f"source error HTTP {code}")
         raise ConnectorError(f"unexpected HTTP {code} from source")
+
+    @staticmethod
+    def _error_code(resp: httpx.Response) -> str | None:
+        try:
+            body = json.loads(resp.content)
+        except (ValueError, httpx.ResponseNotRead):
+            return None
+        err = body.get("error") if isinstance(body, dict) else None
+        return str(err.get("code")) if isinstance(err, dict) and err.get("code") else None
+
+    @staticmethod
+    def _group(path: str) -> str:
+        """Rate-limit bucket of a request: the contract limits exports (10/min) separately from reads (60/min)."""
+        return "export" if "/export/" in path else "read"
+
+    async def _pace(self, path: str) -> None:
+        """Do not spend the last request of a budget blindly: when the previous answer said 0 remaining, wait one
+        refill interval (window / quota from `RateLimit-Policy`) instead of provoking a 429 (repeated 429s can put
+        the key in the source's penalty box)."""
+        remaining, interval = self._paced.get(self._group(path), (None, None))
+        if remaining is not None and remaining <= 0:
+            await self._sleep(min(self._max_retry_after, max(0.5, (interval or 1.0) + 0.25)))
+
+    def _observe(self, path: str, resp: httpx.Response) -> None:
+        remaining, interval = parse_rate_limit(resp.headers)
+        if remaining is not None:
+            prev = self._paced.get(self._group(path), (None, None))
+            self._paced[self._group(path)] = (remaining, interval if interval is not None else prev[1])
 
     async def _backoff(self, attempt: int, exc: ConnectorError | None) -> None:
         if isinstance(exc, ConnectorRateLimited):
             if exc.retry_after_s > self._max_retry_after:
                 raise exc
             delay = exc.retry_after_s
+            self._paced.pop(exc.group, None)  # the wait refills the budget: do not pace on top of it
         else:
             delay = self._rand() * min(self._max_s, self._base_s * (2**attempt))
         await self._sleep(delay)
@@ -167,7 +231,9 @@ class SourceClient:
     # -- JSON ----------------------------------------------------------------------------------------
     async def get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
         async def op() -> Any:
+            await self._pace(path)
             resp = await self._http.get(self._base + path, params=params, headers=self._headers, timeout=self._timeout)
+            self._observe(path, resp)
             self._classify(resp)
             try:
                 return resp.json()
@@ -200,7 +266,9 @@ class SourceClient:
                 q["cursor"] = cursor
 
             async def op(q: dict[str, Any] = q) -> tuple[list[Any], str | None]:
+                await self._pace(path)
                 resp = await self._http.get(self._base + path, params=q, headers=self._headers, timeout=self._timeout)
+                self._observe(path, resp)
                 self._classify(resp)
                 text = resp.text
                 try:
@@ -246,7 +314,20 @@ class SourceClient:
         seen: set[str] = set()
         while True:
             page_cursor = cursor
-            records, next_cursor = await self._with_retries(lambda c=page_cursor: self._read_page(path, params, c, stats), stats)  # type: ignore[misc]
+
+            async def fetch(c: str | None = page_cursor) -> tuple[list[dict[str, Any]], str | None]:
+                return await self._read_page(path, params, c, stats)
+
+            while True:
+                try:
+                    records, next_cursor = await self._with_retries(fetch, stats)
+                    break
+                except ConnectorBadRequest:
+                    if self._export_limit <= self._page_limit:
+                        raise
+                    # the source caps export pages lower than we asked: fall back to the contract's 1000 and retry the page
+                    logger.warning("source rejected export limit=%s, falling back to %s", self._export_limit, self._page_limit)
+                    self._export_limit = self._page_limit
             stats.pages += 1
             for rec in records:
                 stats.records += 1
@@ -263,9 +344,10 @@ class SourceClient:
     async def _read_page(
         self, path: str, params: dict[str, Any] | None, cursor: str | None, stats: StreamStats
     ) -> tuple[list[dict[str, Any]], str | None]:
-        q: dict[str, Any] = {**(params or {}), "limit": self._page_limit}
+        q: dict[str, Any] = {**(params or {}), "limit": self._export_limit}
         if cursor:
             q["cursor"] = cursor
+        await self._pace(path)
         records: list[dict[str, Any]] = []
         bad = 0
         total = 0
@@ -273,6 +355,9 @@ class SourceClient:
         async with self._http.stream(
             "GET", self._base + path, params=q, headers={**self._headers, "Accept": "application/x-ndjson"}, timeout=self._timeout
         ) as resp:
+            self._observe(path, resp)
+            if resp.status_code >= 400:
+                await resp.aread()
             self._classify(resp)
             next_cursor = resp.headers.get("X-Next-Cursor") or None
             async for line in resp.aiter_lines():

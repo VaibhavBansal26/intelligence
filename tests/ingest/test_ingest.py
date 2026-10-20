@@ -65,7 +65,9 @@ def test_mutable_resource_updates_are_picked_up(fresh_env: Env) -> None:
 
 def test_interrupted_sync_resumes_from_cursor(tmp_path: Path) -> None:
     world = generate_world(WorldConfig(seed=3, n_days=30, visitors_per_day=60, support_only_contacts=50))
-    gen = build_env(tmp_path, world, train=False, connector_max_attempts=2, connector_page_limit=200, ingest_chunk_rows=200)
+    gen = build_env(
+        tmp_path, world, train=False, connector_max_attempts=2, connector_export_page_limit=200, ingest_chunk_rows=200
+    )
     env = next(gen)
     c = env.app.state.container
     with session_scope(c.sessions) as s:
@@ -89,7 +91,7 @@ def test_interrupted_sync_resumes_from_cursor(tmp_path: Path) -> None:
 
 def test_truncated_and_malformed_pages_do_not_lose_or_duplicate_rows(tmp_path: Path) -> None:
     world = generate_world(WorldConfig(seed=4, n_days=30, visitors_per_day=60, support_only_contacts=50))
-    gen = build_env(tmp_path, world, train=False, connector_page_limit=300)
+    gen = build_env(tmp_path, world, train=False, connector_export_page_limit=300)
     env = next(gen)
     c = env.app.state.container
     with session_scope(c.sessions) as s:

@@ -41,7 +41,13 @@ class Settings(BaseSettings):
     connector_max_attempts: int = 5
     connector_backoff_base_s: float = 0.5
     connector_backoff_max_s: float = 30.0
-    connector_page_limit: int = 1000
+    connector_page_limit: int = 1000  # list endpoints (contract maximum)
+    connector_export_page_limit: int = (
+        5000  # NDJSON exports: fewer, bigger pages (10 requests/min/key); falls back to connector_page_limit on a 400
+    )
+    connector_max_retry_after_s: float = (
+        120.0  # longest Retry-After honoured inside one request; longer fails the resource (cursor kept)
+    )
     connector_max_bad_line_ratio: float = 0.05
     min_schema_version: int = 1
     max_schema_version: int = 1

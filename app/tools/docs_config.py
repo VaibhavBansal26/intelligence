@@ -90,7 +90,17 @@ DOCS: dict[str, tuple[str, str, str]] = {
         "30",
         "",
     ),
-    "connector_page_limit": ("Rows per NDJSON/list page (contract maximum 1000).", "1000", ""),
+    "connector_page_limit": ("Rows per list page (contract maximum 1000); also the fallback export page size.", "1000", ""),
+    "connector_export_page_limit": (
+        "Rows requested per NDJSON export page. Exports are limited to 10 requests per minute per key, so pages are large (Funnels allows 20,000, Conversations 5,000); a source that answers 400 gets `connector_page_limit` instead.",
+        "5000",
+        "",
+    ),
+    "connector_max_retry_after_s": (
+        "Longest `Retry-After` honoured by sleeping inside one request. A longer penalty (the apps escalate to minutes after repeated 429s) fails that resource with its cursor kept, so the next sync resumes.",
+        "120",
+        "",
+    ),
     "connector_max_bad_line_ratio": (
         "Fraction of malformed NDJSON lines tolerated per page before the sync fails with a schema error.",
         "0.05",

@@ -4,6 +4,7 @@ All notable changes are recorded here ([Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 ### Added
+- Connector: reads `RateLimit` / `RateLimit-Policy` and waits one refill interval when a bucket is empty instead of provoking a 429; exports request 5,000 rows (`CONNECTOR_EXPORT_PAGE_LIMIT`) and fall back to 1,000 on a 400; `CONNECTOR_MAX_RETRY_AFTER_S` caps how long a `Retry-After` is slept (default 120 s).
 - Out-of-core path: hash-bucketed Parquet event store, incremental per-bucket contact-profile refresh, `profiles` fan-out jobs, standalone worker (`python -m app.worker`).
 - `POST /v1/leads/score/batch`, model LRU cache with live hot swap on promote/rollback, per-data-version feature-frame cache.
 - Per-account budgets: concurrent jobs with fair scheduling, `ACCOUNT_MAX_EVENT_ROWS`, `ML_MAX_TRAINING_ROWS`.

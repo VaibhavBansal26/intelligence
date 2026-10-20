@@ -132,6 +132,8 @@ class IngestService:
                 page_limit=self._settings.connector_page_limit,
                 sleep=self._sleep,
                 now=self._clock,
+                export_page_limit=self._settings.connector_export_page_limit,
+                max_retry_after_s=self._settings.connector_max_retry_after_s,
             )
             await self._check_schema(client, source_id, result)
             for resource in RESOURCES[kind]:

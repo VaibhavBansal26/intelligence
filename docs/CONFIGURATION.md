@@ -26,7 +26,9 @@ Copy `.env.example` to start. Settings marked **required in production** make th
 | `CONNECTOR_MAX_ATTEMPTS` | `5` | no | `5` | Attempts per request (retries use exponential backoff with full jitter). |  |
 | `CONNECTOR_BACKOFF_BASE_S` | `0.5` | no | `0.5` | Backoff base in seconds. |  |
 | `CONNECTOR_BACKOFF_MAX_S` | `30.0` | no | `30` | Backoff ceiling in seconds. A `Retry-After` above 60 s is surfaced and the job is rescheduled instead of sleeping. |  |
-| `CONNECTOR_PAGE_LIMIT` | `1000` | no | `1000` | Rows per NDJSON/list page (contract maximum 1000). |  |
+| `CONNECTOR_PAGE_LIMIT` | `1000` | no | `1000` | Rows per list page (contract maximum 1000); also the fallback export page size. |  |
+| `CONNECTOR_EXPORT_PAGE_LIMIT` | `5000` | no | `5000` | Rows requested per NDJSON export page. Exports are limited to 10 requests per minute per key, so pages are large (Funnels allows 20,000, Conversations 5,000); a source that answers 400 gets `connector_page_limit` instead. |  |
+| `CONNECTOR_MAX_RETRY_AFTER_S` | `120.0` | no | `120` | Longest `Retry-After` honoured by sleeping inside one request. A longer penalty (the apps escalate to minutes after repeated 429s) fails that resource with its cursor kept, so the next sync resumes. |  |
 | `CONNECTOR_MAX_BAD_LINE_RATIO` | `0.05` | no | `0.05` | Fraction of malformed NDJSON lines tolerated per page before the sync fails with a schema error. | A truncated final line is always retried, never skipped. |
 | `MIN_SCHEMA_VERSION` | `1` | no | `1` | Oldest source `schema_version` accepted. |  |
 | `MAX_SCHEMA_VERSION` | `1` | no | `1` | Newest tested `schema_version`; newer sources only produce a warning (additive contract). |  |
