@@ -255,13 +255,17 @@ class Funnels:
             steps = []
             for s in detail["steps"]:
                 page = self.http.get(f"{self.base}/api/funnels/{f['id']}/steps/{s['id']}/page", headers=h).json()
-                blocks = list(_walk(page["doc"]["blocks"]))
+                doc = page["doc"]
+                # GrapesJS project document (version 2): the server derives the form and checkout definitions
+                # from the project, so they are read from `forms` / `products`; the project itself is never edited here
+                if doc.get("version") != 2:
+                    raise SystemExit(f"unexpected page document version {doc.get('version')!r}: expected 2 (GrapesJS project)")
                 steps.append(
                     {
                         "id": s["id"],
                         "name": s["name"],
-                        "forms": [b for b in blocks if b["type"] == "form"],
-                        "checkouts": [b for b in blocks if b["type"] == "checkout"],
+                        "forms": list(doc["forms"]),
+                        "checkouts": list(doc["products"]),
                     }
                 )
             n = len(steps)
@@ -384,16 +388,6 @@ class Funnels:
 
 def _main_checkout(step: dict[str, Any]) -> dict[str, Any] | None:
     return next((c for c in step["checkouts"] if not c.get("orderBump") and not c.get("oneClickUpsell")), None)
-
-
-def _walk(blocks: list[dict[str, Any]]):
-    for b in blocks:
-        yield b
-        if isinstance(b.get("children"), list):
-            yield from _walk(b["children"])
-        if isinstance(b.get("columns"), list):
-            for c in b["columns"]:
-                yield from _walk(c.get("children", []))
 
 
 def _utms(src: tuple) -> dict[str, str] | None:

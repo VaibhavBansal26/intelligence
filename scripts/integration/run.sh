@@ -111,16 +111,12 @@ stop_pid() { # graceful TERM, wait up to 10 s, then KILL
 
 if [ -z "$REUSE" ] || [ ! -f "$WORK/traffic.json" ]; then
   # -- 2. seed both apps with their own seed code ---------------------------------------------------------------
-  log "seeding Funnels (npm run seed crashes on a circular import, see docs/INTEGRATION-FINDINGS.md: using the wrapper)"
-  (cd "$FUNNELS_DIR/server" && FUNNELS_SERVER_DIR="$FUNNELS_DIR/server" DATABASE_PATH="$WORK/f/funnels.db" DATA_DIR="$WORK/f" NODE_ENV=development \
-    node --import tsx "$HERE/seed_funnels.mjs" >"$WORK/logs/seed-funnels.log" 2>&1) || { cat "$WORK/logs/seed-funnels.log"; exit 1; }
-  log "seeding Conversations (its seed process does not exit by itself: waiting for the success line, then stopping it)"
-  (cd "$CONV_DIR/server" && exec env DATABASE_PATH="$WORK/c/conv.db" DATA_DIR="$WORK/c" NODE_ENV=development node --import tsx src/seed.ts >"$WORK/logs/seed-conv.log" 2>&1) &
-  echo $! >"$WORK/seed.pid"; disown
-  PIDS+=("$(cat "$WORK/seed.pid")")
-  for _ in $(seq 1 100); do grep -q "Seeded demo workspace" "$WORK/logs/seed-conv.log" && break; sleep 0.5; done
+  log "seeding Funnels and Conversations with their own seed scripts (npm run seed; both exit by themselves since the fixes N1/N2)"
+  (cd "$FUNNELS_DIR/server" && DATABASE_PATH="$WORK/f/funnels.db" DATA_DIR="$WORK/f" NODE_ENV=development \
+    timeout 120 npm run seed >"$WORK/logs/seed-funnels.log" 2>&1) || { cat "$WORK/logs/seed-funnels.log"; echo "funnels seed failed" >&2; exit 1; }
+  (cd "$CONV_DIR/server" && DATABASE_PATH="$WORK/c/conv.db" DATA_DIR="$WORK/c" NODE_ENV=development \
+    timeout 120 npm run seed >"$WORK/logs/seed-conv.log" 2>&1) || { cat "$WORK/logs/seed-conv.log"; echo "conversations seed failed" >&2; exit 1; }
   grep -q "Seeded demo workspace" "$WORK/logs/seed-conv.log" || { cat "$WORK/logs/seed-conv.log"; echo "conversations seed failed" >&2; exit 1; }
-  stop_pid "$WORK/seed.pid"
 
   # -- 3. phase A: shifted clock, generous limits, traffic -------------------------------------------------------
   log "phase A: start apps with a shifted clock (history building) and relaxed public rate limits"
