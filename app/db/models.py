@@ -71,6 +71,22 @@ class SyncState(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class ContactLink(Base):
+    """Identity bridge: a contact's key under one source's pepper -> the account's canonical key (see /v1/identity/bridge).
+
+    The real apps each generate their own random identity pepper, so the same e-mail has a different `contact_key` in
+    each. A customer-supplied contact list lets the service compute both keys (in memory; the e-mails are never stored)
+    and record which pairs are the same person."""
+
+    __tablename__ = "contact_links"
+    __table_args__ = (Index("ix_links_acct_canonical", "account_id", "canonical_key"),)
+    source_id: Mapped[str] = mapped_column(ForeignKey("sources.id", ondelete="CASCADE"), primary_key=True)
+    contact_key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    account_id: Mapped[str] = mapped_column(String(32))
+    canonical_key: Mapped[str] = mapped_column(String(80))
+    created_at: Mapped[int] = mapped_column(BigInteger)
+
+
 class Job(Base):
     __tablename__ = "jobs"
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
@@ -200,7 +216,10 @@ class Room(Base):
     account_id: Mapped[str] = mapped_column(String(32))
     created_at: Mapped[int] = mapped_column(BigInteger)
     closed_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    contact_key: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    contact_key: Mapped[str | None] = mapped_column(String(80), nullable=True)  # canonical key (bridged) or the source's own
+    contact_key_raw: Mapped[str | None] = mapped_column(
+        String(80), nullable=True
+    )  # the key as exported; set once a bridge re-keys the row
     mix_dm: Mapped[int] = mapped_column(Integer, default=0)
     mix_sms: Mapped[int] = mapped_column(Integer, default=0)
     mix_email: Mapped[int] = mapped_column(Integer, default=0)

@@ -6,7 +6,8 @@
 | Source | A registered connection to one app: `funnels` or `conversations` (base URL, API key, identity pepper). |
 | Contract | `ANALYTICS-CONTRACT.md` v1: the only coupling with the Node apps. |
 | Contact key | `HMAC-SHA256(pepper, lower(trim(email)))` hex. Same pepper in both apps gives the same key, which joins them. |
-| Pepper | Per-workspace secret used for contact keys. Mismatched peppers mean zero join coverage. |
+| Pepper | Per-workspace secret used for contact keys. Mismatched peppers mean zero join coverage; the real apps each generate their own, see Identity bridge. |
+| Identity bridge | `POST /v1/identity/bridge`: a customer-supplied e-mail list from which the service derives each source's key for the same person and links them (`contact_links`). |
 | Join coverage | Share of the smaller app's contacts that also appear in the other app. |
 | Landing tables | Local copies of source data (`events`, `leads`, `rooms`, ...). |
 | Watermark | Highest timestamp synced per resource; the next sync starts there (mutable resources re-read a lookback window). |

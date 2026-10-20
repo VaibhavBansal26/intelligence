@@ -4,6 +4,7 @@ All notable changes are recorded here ([Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 ### Added
+- Identity bridge: `POST /v1/identity/bridge` and `GET /v1/identity/bridge` join contacts across sources whose identity peppers differ (the real apps each generate their own), from a contact list the customer supplies; `contact_links` table and `rooms.contact_key_raw` (migration 0002); `/v1/join` reports `bridge_links` and `identity_bridge_active`.
 - Connector: reads `RateLimit` / `RateLimit-Policy` and waits one refill interval when a bucket is empty instead of provoking a 429; exports request 5,000 rows (`CONNECTOR_EXPORT_PAGE_LIMIT`) and fall back to 1,000 on a 400; `CONNECTOR_MAX_RETRY_AFTER_S` caps how long a `Retry-After` is slept (default 120 s).
 - Anomaly detector: collapse rule (3 consecutive days at or below 40% of the seasonal baseline) for noisy count series.
 - Out-of-core path: hash-bucketed Parquet event store, incremental per-bucket contact-profile refresh, `profiles` fan-out jobs, standalone worker (`python -m app.worker`).

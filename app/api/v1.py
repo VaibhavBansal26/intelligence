@@ -457,6 +457,23 @@ def join(p: Principal = Depends(require(rbac.P_READ)), c: Container = Depends(ge
     return c.analytics.join(p.account_id)
 
 
+@router.post(
+    "/identity/bridge",
+    tags=["diagnostics"],
+    responses=ERRORS,
+    summary="Join contacts across sources whose identity peppers differ, from a contact list you supply",
+)
+def identity_bridge(
+    body: s.BridgeRequest, p: Principal = Depends(require(rbac.P_SOURCES)), c: Container = Depends(get_container)
+) -> dict[str, Any]:
+    return c.accounts.apply_identity_bridge(p.account_id, body.emails, replace=body.replace)
+
+
+@router.get("/identity/bridge", tags=["diagnostics"], responses=ERRORS, summary="How many contacts are bridged per source")
+def identity_bridge_status(p: Principal = Depends(require(rbac.P_READ)), c: Container = Depends(get_container)) -> dict[str, Any]:
+    return c.accounts.identity_bridge_status(p.account_id)
+
+
 @router.get("/insights", response_model=s.InsightsResponse, tags=["insights"], responses=ERRORS)
 def get_insights(
     request: Request,

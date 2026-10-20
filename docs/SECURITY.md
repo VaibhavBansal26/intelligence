@@ -4,6 +4,7 @@
 | Asset | Threat | Mitigation |
 |---|---|---|
 | Source API keys and identity peppers | Database leak | Fernet encryption at rest with a KEK from the environment; rotation via comma separated keys; never in responses or logs |
+| Contact e-mails in a bridge list | Retention or leakage of personal data | `POST /v1/identity/bridge` hashes each address in memory with every source's pepper and keeps only the resulting HMAC pairs (`contact_links`); addresses are never stored; request bodies are not logged (the request log has method, path, status and timing only); body size is capped by `MAX_BODY_BYTES` (1 MB, about 25,000 addresses per call); `sources:manage` permission required |
 | Tenant data | Cross-account reads | Every service call takes the principal's `account_id`; ids from another account return 404 (not 403); covered by `tests/api/test_api.py::test_cross_account_access_is_404_everywhere` |
 | Service as a proxy | SSRF through source URLs | Scheme allow-list, DNS resolution and private/loopback/link-local/multicast/reserved (including IPv4-mapped IPv6) rejection, redirects never followed, https required in production, re-validated on every update |
 | API keys | Theft or brute force | Only SHA-256 stored; shown once; scopes narrow a role; expiry, revocation, last-used; per-key and per-IP token buckets |

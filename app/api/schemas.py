@@ -234,3 +234,15 @@ class Health(BaseModel):
 class Ready(BaseModel):
     status: str
     checks: dict[str, str]
+
+
+class BridgeRequest(BaseModel):
+    emails: list[str] = Field(
+        min_length=1,
+        max_length=100_000,
+        description="Contact list the customer already holds. Hashed in memory with each source's pepper; never stored or logged.",
+    )
+    replace: bool = Field(
+        default=False,
+        description="Drop the existing links first. By default calls accumulate, so a long list can be sent in chunks.",
+    )

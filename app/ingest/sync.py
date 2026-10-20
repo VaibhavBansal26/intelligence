@@ -262,6 +262,14 @@ class IngestService:
         else:
             from_ts = self._from_ts(watermark, resource)
         params = {"from": _iso(from_ts)}
+        links: dict[str, str] = {}
+        if resource == "rooms":
+            with session_scope(self._sessions) as s:
+                links = dict(
+                    s.execute(
+                        select(m.ContactLink.contact_key, m.ContactLink.canonical_key).where(m.ContactLink.source_id == source_id)
+                    ).all()
+                )
         buffer: list[dict[str, Any]] = []
         max_ts = watermark or 0
         stats = StreamStats()
@@ -286,6 +294,11 @@ class IngestService:
                 bad += 1
                 continue
             row = rec.to_row(account_id, source_id)  # type: ignore[attr-defined]
+            if resource == "rooms":
+                raw_key = row.get("contact_key")
+                row["contact_key_raw"] = raw_key if raw_key in links else None
+                if raw_key in links:
+                    row["contact_key"] = links[raw_key]
             buffer.append(row)
             ts = row[ts_field]
             if ts > max_ts:

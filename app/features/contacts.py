@@ -237,15 +237,24 @@ def join_report(session: Session, account_id: str) -> dict[str, Any]:
     overlap = len(fkeys & ckeys)
     warnings: list[str] = []
     fps = {s.kind: s.pepper_fp for s in sources}
+    n_links = int(
+        session.execute(select(func.count()).select_from(m.ContactLink).where(m.ContactLink.account_id == account_id)).scalar()
+        or 0
+    )
     if len({s.pepper_fp for s in sources}) > 1 and {"funnels", "conversations"} <= kinds:
-        warnings.append(
-            "pepper_fingerprint_mismatch: the funnels and conversations sources are configured with different identity peppers; contacts cannot be joined"
-        )
+        if n_links:
+            warnings.append(
+                f"identity_bridge_active: the sources use different identity peppers; {n_links} contacts are linked through the contact list you supplied (people not on that list cannot be joined)"
+            )
+        else:
+            warnings.append(
+                "pepper_fingerprint_mismatch: the funnels and conversations sources are configured with different identity peppers; contacts cannot be joined unless you supply a contact list to POST /v1/identity/bridge"
+            )
     smaller = min(len(fkeys), len(ckeys))
     coverage = overlap / smaller if smaller else None
     if {"funnels", "conversations"} <= kinds and len(fkeys) >= 50 and len(ckeys) >= 50 and (coverage or 0) < 0.01:
         warnings.append(
-            "pepper_mismatch_suspected: almost no contact_key appears in both apps; verify both sources use the same identity pepper"
+            "pepper_mismatch_suspected: almost no contact_key appears in both apps; verify both sources use the same identity pepper (or bridge them with POST /v1/identity/bridge)"
         )
     lead_dupes = _read(
         conn,
@@ -265,5 +274,6 @@ def join_report(session: Session, account_id: str) -> dict[str, Any]:
         "coverage_conversations_side": round(overlap / len(ckeys), 4) if ckeys else None,
         "duplicate_lead_keys": len(lead_dupes),
         "pepper_fingerprints": fps,
+        "bridge_links": n_links,
         "warnings": warnings,
     }

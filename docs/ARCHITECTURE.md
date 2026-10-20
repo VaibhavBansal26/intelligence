@@ -90,6 +90,7 @@ erDiagram
     sources ||--o{ rooms : lands
     rooms ||--o{ messages_meta : has
     sources ||--o{ rollups : lands
+    sources ||--o{ contact_links : bridges
     accounts {
         string id PK
         int data_version
@@ -119,7 +120,13 @@ erDiagram
         string source_id PK
         string ext_id PK
         string contact_key
+        string contact_key_raw
         float first_response_s
+    }
+    contact_links {
+        string source_id PK
+        string contact_key PK
+        string canonical_key
     }
     model_versions {
         string id PK
@@ -131,7 +138,9 @@ erDiagram
 ```
 
 `contact_key` is the join column between the Funnels and Conversations tables. There is no foreign key: it is an
-HMAC value produced independently by each app from the shared pepper.
+HMAC value produced independently by each app. The real apps use different peppers, so `contact_links` (filled by
+`POST /v1/identity/bridge`) maps a source's key to the canonical (Funnels) key; rooms keep the key as exported in
+`contact_key_raw` and carry the canonical one in `contact_key`.
 
 ## Deployment
 

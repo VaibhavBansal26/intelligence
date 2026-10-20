@@ -5,14 +5,14 @@ from __future__ import annotations
 from typing import Any
 
 import jwt
-from sqlalchemy import delete, select, update
+from sqlalchemy import bindparam, delete, func, select, update
 
 from app.clock import Clock
 from app.config import Settings
 from app.db import models as m
-from app.db.session import SessionFactory, session_scope
+from app.db.session import SessionFactory, session_scope, upsert
 from app.errors import Conflict, NotFound, Unauthorized, Unprocessable
-from app.security.crypto import SecretBox, generate_api_key, new_id, pepper_fingerprint, sha256_hex
+from app.security.crypto import SecretBox, contact_key, generate_api_key, new_id, pepper_fingerprint, sha256_hex
 from app.security.rbac import ROLE_PERMISSIONS, Principal, effective_permissions
 from app.security.ssrf import Resolver, default_resolver, validate_source_url
 
@@ -266,6 +266,7 @@ class AccountService:
                 row.api_key_enc = self._secrets.encrypt(api_key)
             if pepper:
                 row.pepper_enc, row.pepper_fp = self._secrets.encrypt(pepper), pepper_fingerprint(pepper)
+                self._unlink(s, source_id)  # links were computed with the old pepper
             if status:
                 if status not in ("active", "paused"):
                     raise Unprocessable("status must be active or paused", code="INVALID_STATUS")
@@ -293,5 +294,101 @@ class AccountService:
             )
             for table in tables:
                 s.execute(delete(table).where(table.source_id == source_id))
+            s.execute(delete(m.ContactLink).where(m.ContactLink.source_id == source_id))
             s.delete(row)
             s.execute(update(m.Account).where(m.Account.id == account_id).values(data_version=m.Account.data_version + 1))
+
+    # --- identity bridge ---------------------------------------------------------------------------------------
+    @staticmethod
+    def _unlink(s: Any, source_id: str) -> None:
+        s.execute(delete(m.ContactLink).where(m.ContactLink.source_id == source_id))
+        s.execute(
+            update(m.Room)
+            .where(m.Room.source_id == source_id, m.Room.contact_key_raw.is_not(None))
+            .values(contact_key=m.Room.contact_key_raw, contact_key_raw=None)
+        )
+
+    def links_for(self, source_id: str) -> dict[str, str]:
+        """source contact_key -> canonical key, for ingest-time re-keying of new rows."""
+        with session_scope(self._sessions) as s:
+            return dict(
+                s.execute(
+                    select(m.ContactLink.contact_key, m.ContactLink.canonical_key).where(m.ContactLink.source_id == source_id)
+                ).all()
+            )
+
+    def apply_identity_bridge(self, account_id: str, emails: list[str], *, replace: bool = False) -> dict[str, Any]:
+        """Link the same people across sources whose identity peppers differ.
+
+        `emails` is a contact list the customer already holds (CRM export, newsletter list). For each address the
+        contact_key under every active source's pepper is computed in memory; the address itself is discarded. The
+        canonical key of a person is the key of the first `funnels` source (else the first source); rooms of the other
+        sources are re-keyed to it, and rows ingested later are re-keyed on arrival. Calls accumulate (a long list can be
+        sent in several calls); `replace=True` first drops the existing links."""
+        norm = sorted({e.strip().lower() for e in emails if isinstance(e, str) and "@" in e})
+        if not norm:
+            raise Unprocessable("no usable e-mail addresses in the list", code="EMPTY_BRIDGE")
+        with session_scope(self._sessions) as s:
+            sources = list(
+                s.execute(
+                    select(m.Source)
+                    .where(m.Source.account_id == account_id, m.Source.status == "active")
+                    .order_by(m.Source.created_at, m.Source.id)
+                ).scalars()
+            )
+            if len(sources) < 2:
+                raise Unprocessable("an identity bridge needs at least two active sources", code="BRIDGE_NEEDS_TWO_SOURCES")
+            peppers = {src.id: self._secrets.decrypt(src.pepper_enc) for src in sources}
+            canon_src = next((x for x in sources if x.kind == "funnels"), sources[0])
+            now = int(self._clock())
+            linked: dict[str, int] = {}
+            relinked = 0
+            for src in sources:
+                if src.id == canon_src.id:
+                    continue
+                if replace:
+                    self._unlink(s, src.id)
+                rows = []
+                for e in norm:
+                    k = contact_key(peppers[src.id], e)
+                    c = contact_key(peppers[canon_src.id], e)
+                    if k != c:
+                        rows.append(
+                            {
+                                "source_id": src.id,
+                                "contact_key": k,
+                                "account_id": account_id,
+                                "canonical_key": c,
+                                "created_at": now,
+                            }
+                        )
+                for i in range(0, len(rows), 5000):
+                    upsert(s, m.ContactLink.__table__, rows[i : i + 5000])
+                linked[src.id] = len(rows)
+                stmt = (
+                    update(m.Room)
+                    .where(m.Room.source_id == bindparam("b_sid"), m.Room.contact_key == bindparam("b_raw"))
+                    .values(contact_key_raw=m.Room.contact_key, contact_key=bindparam("b_canon"))
+                )
+                params = [{"b_sid": r["source_id"], "b_raw": r["contact_key"], "b_canon": r["canonical_key"]} for r in rows]
+                conn = s.connection()
+                for i in range(0, len(params), 2000):
+                    res = conn.execute(stmt, params[i : i + 2000])
+                    relinked += max(0, int(getattr(res, "rowcount", 0) or 0))
+            s.execute(update(m.Account).where(m.Account.id == account_id).values(data_version=m.Account.data_version + 1))
+            return {
+                "emails_received": len(emails),
+                "emails_usable": len(norm),
+                "canonical_source_id": canon_src.id,
+                "links_by_source": linked,
+                "rooms_rekeyed": relinked,
+            }
+
+    def identity_bridge_status(self, account_id: str) -> dict[str, Any]:
+        with session_scope(self._sessions) as s:
+            rows = s.execute(
+                select(m.ContactLink.source_id, func.count())
+                .where(m.ContactLink.account_id == account_id)
+                .group_by(m.ContactLink.source_id)
+            ).all()
+            return {"links_by_source": {sid: int(n) for sid, n in rows}, "total_links": int(sum(n for _, n in rows))}

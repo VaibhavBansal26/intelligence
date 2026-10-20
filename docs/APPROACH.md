@@ -22,10 +22,17 @@ The service ranks and recommends; it does not mutate the source apps.
 | Pickle (joblib) artifacts with sha256 in the DB | Simple and fast | Artifacts are trusted code: the model volume must not be writable by anyone else |
 
 ## Combining the two apps
-Contacts are linked by `contact_key = HMAC-SHA256(pepper, lower(trim(email)))`, produced by each app with the
-same per-workspace pepper. The service stores the pepper encrypted only to (a) compare fingerprints between
-sources and (b) hash an email supplied in `POST /v1/leads/score`. The join report gives coverage and warns on
-pepper-fingerprint differences or near-zero overlap. Single-source accounts work: the missing block is NaN (all-NaN
+Contacts are linked by `contact_key = HMAC-SHA256(pepper, lower(trim(email)))`. The contract assumes both apps use the
+same per-workspace pepper. **The real apps do not**: each generates its own random pepper and neither can set it
+(only rotate it to a new random value; found by the integration run, [INTEGRATION-FINDINGS.md](INTEGRATION-FINDINGS.md)),
+so an e-mail has a different key in each and the join is empty. Until the apps can import a pepper, the service offers
+an **identity bridge**: `POST /v1/identity/bridge` takes a contact list the customer already has (CRM export,
+newsletter list), computes each address's key under every source's pepper in memory (the address is discarded),
+stores only the key pairs (`contact_links`), re-keys the other source's rooms to the canonical key (the Funnels
+key; the original stays in `rooms.contact_key_raw`) and re-keys rows that arrive later. People missing from the list
+stay unjoined; changing a source's pepper drops its links. The service also stores the pepper encrypted to (a)
+compare fingerprints between sources and (b) hash an email supplied in `POST /v1/leads/score`. The join report gives
+coverage and warns on pepper-fingerprint differences (or says the bridge is active) and near-zero overlap. Single-source accounts work: the missing block is NaN (all-NaN
 columns are dropped at training time and recorded in the model metrics).
 
 ## Privacy

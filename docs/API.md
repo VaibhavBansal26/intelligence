@@ -38,6 +38,8 @@ All responses are JSON. Errors always look like `{"error": {"code": "SNAKE_CASE"
 | `GET /v1/sync/status` | `data:read` | watermarks, last status per resource, recent jobs |
 | `GET /v1/jobs/{job_id}` | `data:read` | one job |
 | `GET /v1/join` | `data:read` | cross-app join coverage and pepper warnings |
+| `POST /v1/identity/bridge` | admin | link the same people across sources whose identity peppers differ, from a contact list you supply (calls accumulate; `"replace": true` starts over; see [APPROACH.md](APPROACH.md#combining-the-two-apps)) |
+| `GET /v1/identity/bridge` | `data:read` | number of bridged contacts per source |
 | `GET /v1/rankings/funnels` | `data:read` | funnels ranked by expected uplift (`?rerank=true`) |
 | `GET /v1/rankings/steps` | `data:read` | steps ranked (`?funnel_id=`, `?rerank=true`) |
 | `GET /v1/leads/scores` | `data:read` | open leads ranked by conversion probability (`min_score`, `limit`, `offset`, `scope=open|all`) |
@@ -72,7 +74,7 @@ API=http://127.0.0.1:8000
 curl -s -X POST $API/admin/accounts -H "X-Admin-Key: $ADMIN_API_KEY" -H 'content-type: application/json' -d '{"name":"Acme"}'
 # {"account":{"id":"..."},"api_key":"isk_xxxxxxxx_...","key_id":"..."}
 
-# 2. register sources (pepper must be the same in both apps)
+# 2. register sources (each source gets the pepper of ITS app; the real apps generate different ones, see step 4)
 curl -s -X POST $API/v1/sources -H "Authorization: Bearer $KEY" -H 'content-type: application/json' -H 'Idempotency-Key: src-funnels-1' \
   -d '{"kind":"funnels","name":"funnels","base_url":"https://funnels.example.com","api_key":"fa_live_...","identity_pepper":"..."}'
 
@@ -80,6 +82,12 @@ curl -s -X POST $API/v1/sources -H "Authorization: Bearer $KEY" -H 'content-type
 curl -s -X POST "$API/v1/sync?wait=true" -H "Authorization: Bearer $KEY" -H 'content-type: application/json' -d '{}'
 curl -s -X POST "$API/v1/models/train?wait=true" -H "Authorization: Bearer $KEY" -H 'content-type: application/json' -d '{}'
 curl -s "$API/v1/rankings/steps" -H "Authorization: Bearer $KEY"
+
+# 4. only when the two apps have different peppers (GET /v1/join shows joined_contacts 0 and a pepper warning):
+#    send a contact list you already hold. E-mails are hashed in memory with each source's pepper and never stored.
+curl -s -X POST $API/v1/identity/bridge -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -d '{"emails":["ada@example.com","grace@example.com"]}'
+# {"emails_received":2,"emails_usable":2,"canonical_source_id":"...","links_by_source":{"...":2},"rooms_rekeyed":3}
 curl -s -D- "$API/v1/segments" -H "Authorization: Bearer $KEY" -o /dev/null | grep -i etag
 curl -s "$API/v1/segments" -H "Authorization: Bearer $KEY" -H 'If-None-Match: "<etag>"' -w '%{http_code}\n'   # 304
 
