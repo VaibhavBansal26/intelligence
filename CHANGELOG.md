@@ -16,6 +16,7 @@ All notable changes are recorded here ([Keep a Changelog](https://keepachangelog
 - `/v1/rankings/conversations/open` answered 500 when a feature was NaN (not valid JSON); NaN and infinities are now `null` in every `/v1` JSON response.
 - A revoked, expired or out-of-scope key on one source failed the whole sync job and starved the account's other sources; it is now reported per resource and the other sources sync.
 - Funnel ranking listed thank-you pages first (0% "pass rate" of a page with nothing to convert); the last step now counts orders plus opt-ins, confirmation pages (no form, no checkout, no conversion) are left out and the page before one becomes the funnel's final step.
+- `contracts/funnel_step.schema.json` and `contracts/funnel_structure.schema.json` rejected the real apps' responses (`exit_rate: null`, funnel `id`).
 - `GET /v1/sync/status` reported 0 rows for the `funnels` and `funnel_structure` snapshots.
 
 ## [0.1.0] - 2026-10-19

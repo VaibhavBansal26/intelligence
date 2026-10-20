@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:intelligence:contract:funnel_structure",
   "title": "funnel_structure",
-  "description": "GET /export/funnel-structure record. NOTE: the contract leaves the exact shape open; this is the shape the consumer assumes (step_id may also arrive as id) (additionalProperties intentionally open: unknown fields must be ignored by consumers)",
+  "description": "GET /export/funnel-structure record. The contract leaves the exact shape open; the real Funnels app answers {data:[...], next_cursor} with the funnel as `id` and each step as `step_id`, without a step `type` (blocks are counted instead). Accepted: `funnel_id` or `id` for the funnel, `step_id` or `id` for a step (additionalProperties intentionally open: unknown fields must be ignored by consumers)",
   "type": "object",
   "properties": {
     "funnel_id": {
@@ -42,18 +42,52 @@
           },
           "has_upsell": {
             "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
           }
         },
         "required": [
-          "step_id",
           "order",
           "word_count"
+        ],
+        "anyOf": [
+          {
+            "required": [
+              "step_id"
+            ]
+          },
+          {
+            "required": [
+              "id"
+            ]
+          }
         ]
       }
+    },
+    "id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
     }
   },
   "required": [
-    "funnel_id",
     "steps"
+  ],
+  "anyOf": [
+    {
+      "required": [
+        "funnel_id"
+      ]
+    },
+    {
+      "required": [
+        "id"
+      ]
+    }
   ]
 }

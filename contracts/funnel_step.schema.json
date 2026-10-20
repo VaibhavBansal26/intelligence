@@ -33,7 +33,11 @@
       "type": "number"
     },
     "exit_rate": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "null for the last step of a funnel (the real Funnels app); fraction 0..1 otherwise"
     },
     "avg_time_on_page_s": {
       "type": [
