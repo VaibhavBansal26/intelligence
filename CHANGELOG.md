@@ -13,6 +13,8 @@ All notable changes are recorded here ([Keep a Changelog](https://keepachangelog
 ### Fixed
 - Training and `/v1/leads/scores`, `/v1/segments`, `/v1/insights` crashed on real data: rooms the apps' AI triage did not label have a null `ai_intent` (pandas `<NA>` in an integer cast).
 - `/v1/rankings/conversations/open` answered 500 when a feature was NaN (not valid JSON); NaN and infinities are now `null` in every `/v1` JSON response.
+- A revoked, expired or out-of-scope key on one source failed the whole sync job and starved the account's other sources; it is now reported per resource and the other sources sync.
+- `GET /v1/sync/status` reported 0 rows for the `funnels` and `funnel_structure` snapshots.
 
 ## [0.1.0] - 2026-10-19
 ### Added

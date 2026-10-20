@@ -52,6 +52,8 @@ EXPORT_PATH = {
 }
 EXPORT_TABLE = {"events": m.Event, "leads": m.Lead, "rooms": m.Room, "messages_meta": m.MessageMeta}
 TS_FIELD = {"events": "ts", "leads": "created_at", "rooms": "created_at", "messages_meta": "ts"}
+MAX_RANGE_DAYS = 365  # contract: from/to span at most 366 days
+SNAPSHOT = {"funnels", "funnel_structure"}  # replaced wholesale on each sync (no watermark)
 MUTABLE = {"leads", "rooms"}  # re-read a trailing window and upsert; others are append-only
 FUNNEL_METRICS = ["visits", "unique_visits", "optins", "orders", "gross"]
 CONV_METRICS = ["rooms_opened", "messages_in", "messages_out", "first_response_p50", "resolution_p50", "backlog"]
@@ -130,20 +132,37 @@ class IngestService:
                 backoff_max_s=self._settings.connector_backoff_max_s,
                 max_bad_line_ratio=self._settings.connector_max_bad_line_ratio,
                 page_limit=self._settings.connector_page_limit,
-                sleep=self._sleep,
-                now=self._clock,
                 export_page_limit=self._settings.connector_export_page_limit,
                 max_retry_after_s=self._settings.connector_max_retry_after_s,
+                sleep=self._sleep,
+                now=self._clock,
             )
-            await self._check_schema(client, source_id, result)
-            for resource in RESOURCES[kind]:
+            try:
+                await self._check_schema(client, source_id, result)
+            except (ConnectorAuthError, ConnectorSchemaError) as exc:
+                # revoked / expired / out-of-scope key, or a schema version we refuse: nothing of this source can be read.
+                # Record it per resource and carry on with the account's other sources (the job must not abort).
+                for resource in RESOURCES[kind]:
+                    result.resources.append(ResourceResult(resource, error=f"{type(exc).__name__}: {exc}"))
+                    self._mark(account_id, source_id, resource, "error", f"{type(exc).__name__}: {exc}")
+                logger.warning("source unusable, skipping", extra={"source_id": source_id, "error": str(exc)})
+                resources: list[str] = []
+            except (ConnectorError, httpx.HTTPError) as exc:
+                # the optional /schema probe being flaky (5xx, rate limit, timeout) must not block the data sync
+                result.warnings.append(f"schema check skipped: {type(exc).__name__}: {exc}")
+                resources = RESOURCES[kind]
+            else:
+                resources = RESOURCES[kind]
+            for resource in resources:
                 if full:
                     self._reset_state(account_id, source_id, resource)
                 rr = ResourceResult(resource)
                 result.resources.append(rr)
                 try:
                     await self._sync_resource(client, account_id, source_id, kind, resource, rr)
-                    self._mark(account_id, source_id, resource, "ok", None)
+                    self._mark(
+                        account_id, source_id, resource, "ok", None, snapshot_rows=rr.rows if resource in SNAPSHOT else None
+                    )
                 except ConnectorAuthError as exc:
                     rr.error = str(exc)
                     self._mark(account_id, source_id, resource, "error", rr.error)
@@ -197,17 +216,21 @@ class IngestService:
             st.watermark = None
             st.cursor = None
 
-    def _mark(self, account_id: str, source_id: str, resource: str, status: str, error: str | None) -> None:
+    def _mark(
+        self, account_id: str, source_id: str, resource: str, status: str, error: str | None, snapshot_rows: int | None = None
+    ) -> None:
         with session_scope(self._sessions) as s:
             st = self._state(s, account_id, source_id, resource)
             st.last_status, st.error, st.last_run_at = status, error, int(self._clock())
+            if snapshot_rows is not None:  # snapshot resources are replaced on every sync: rows_total is the current size
+                st.rows_total = snapshot_rows
 
     def _from_ts(self, watermark: int | None, resource: str) -> int:
         now = int(self._clock())
         if watermark is None:
-            return now - self._settings.backfill_days * 86400
+            return now - min(self._settings.backfill_days, MAX_RANGE_DAYS) * 86400  # the apps refuse ranges over 366 days (400)
         back = self._settings.lookback_days * 86400 if resource in MUTABLE else 0
-        return max(now - 365 * 86400, watermark - back)
+        return max(now - MAX_RANGE_DAYS * 86400, watermark - back)
 
     # ------------------------------------------------------------------------------------------------
     async def _sync_resource(

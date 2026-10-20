@@ -108,7 +108,11 @@ DOCS: dict[str, tuple[str, str, str]] = {
     ),
     "min_schema_version": ("Oldest source `schema_version` accepted.", "1", ""),
     "max_schema_version": ("Newest tested `schema_version`; newer sources only produce a warning (additive contract).", "1", ""),
-    "backfill_days": ("History fetched on the first sync of a resource (contract max range is 366 days).", "180", ""),
+    "backfill_days": (
+        "History fetched on the first sync of a resource. Values above 365 are clamped: the apps refuse a `from`/`to` range over 366 days with a 400.",
+        "180",
+        "",
+    ),
     "lookback_days": ("Trailing window re-read for mutable resources (leads, rooms) and rollups on every sync.", "30", ""),
     "ingest_chunk_rows": (
         "Rows buffered before a DB write and cursor checkpoint. Bounds memory and resume granularity.",

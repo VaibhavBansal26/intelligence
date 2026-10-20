@@ -32,7 +32,7 @@ Copy `.env.example` to start. Settings marked **required in production** make th
 | `CONNECTOR_MAX_BAD_LINE_RATIO` | `0.05` | no | `0.05` | Fraction of malformed NDJSON lines tolerated per page before the sync fails with a schema error. | A truncated final line is always retried, never skipped. |
 | `MIN_SCHEMA_VERSION` | `1` | no | `1` | Oldest source `schema_version` accepted. |  |
 | `MAX_SCHEMA_VERSION` | `1` | no | `1` | Newest tested `schema_version`; newer sources only produce a warning (additive contract). |  |
-| `BACKFILL_DAYS` | `180` | no | `180` | History fetched on the first sync of a resource (contract max range is 366 days). |  |
+| `BACKFILL_DAYS` | `180` | no | `180` | History fetched on the first sync of a resource. Values above 365 are clamped: the apps refuse a `from`/`to` range over 366 days with a 400. |  |
 | `LOOKBACK_DAYS` | `30` | no | `30` | Trailing window re-read for mutable resources (leads, rooms) and rollups on every sync. |  |
 | `INGEST_CHUNK_ROWS` | `5000` | no | `5000` | Rows buffered before a DB write and cursor checkpoint. Bounds memory and resume granularity. |  |
 | `WORKER_ENABLED` | `false` | no | `true` | Run the in-process job worker (sync/train jobs). | Run exactly one worker per database unless the queue is replaced. |
